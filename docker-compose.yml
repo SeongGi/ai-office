@@ -1,0 +1,60 @@
+# ai-office.example.com 용. 서비스 셋:
+#   app   오피스 서버. 호스트 포트는 기계용 4318 하나뿐이다(메인 4317은 밖으로 내보내지 않는다).
+#   auth  구글 로그인 프록시(oauth2-proxy). 사람은 8097(호스트) -> 4180 으로만 들어온다.
+# 기계용 포트(4318)는 events, close-queue, health만 답하고 Bearer 토큰이 필수다.
+services:
+  app:
+    build: .
+    image: agent-floor:latest
+    restart: unless-stopped
+    # ports 없음: 메인 포트는 compose 네트워크 안에서 auth 컨테이너만 부른다.
+    expose:
+      - "4317"
+    ports:
+      - "4318:4318"
+    environment:
+      AGENT_FLOOR_HOST: 0.0.0.0
+      AGENT_FLOOR_MACHINE_PORT: "4318"
+      AGENT_FLOOR_TRUST_PROXY_EMAIL: "1"
+      AGENT_FLOOR_ADMINS: ${AGENT_FLOOR_ADMINS:?.env에 AGENT_FLOOR_ADMINS를 적어 주세요}
+      AGENT_FLOOR_TOKEN: ${AGENT_FLOOR_TOKEN:?.env에 AGENT_FLOOR_TOKEN을 적어 주세요}
+      AGENT_FLOOR_ROOM_MAX: ${AGENT_FLOOR_ROOM_MAX:-5}
+      AGENT_FLOOR_ALLOW_BYPASS_SEND: ${AGENT_FLOOR_ALLOW_BYPASS_SEND:-0}
+      AGENT_FLOOR_AUDIT: /data/audit.log
+    volumes:
+      - audit:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4317/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  auth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "8097:4180"
+    environment:
+      OAUTH2_PROXY_PROVIDER: google
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID:?.env에 OAUTH2_PROXY_CLIENT_ID를 적어 주세요}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET:?.env에 OAUTH2_PROXY_CLIENT_SECRET을 적어 주세요}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:?.env에 OAUTH2_PROXY_COOKIE_SECRET을 적어 주세요}
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://app:4317
+      OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE: /etc/oauth2-proxy/allowed-emails.txt
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_REDIRECT_URL: https://ai-office.example.com/oauth2/callback
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_HTTPONLY: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    volumes:
+      - ./allowed-emails.txt:/etc/oauth2-proxy/allowed-emails.txt:ro
+
+volumes:
+  audit:

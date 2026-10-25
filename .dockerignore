@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-pages
+.git
+.env
+.env.*
+!.env.example
+*.log
+*.bak
+.claude
+docs/shots
+marketing
+desktop
+allowed-emails.txt
+data
