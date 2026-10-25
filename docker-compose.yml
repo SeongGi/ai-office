@@ -43,7 +43,10 @@ services:
       OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET:?.env에 OAUTH2_PROXY_CLIENT_SECRET을 적어 주세요}
       OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:?.env에 OAUTH2_PROXY_COOKIE_SECRET을 적어 주세요}
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
-      OAUTH2_PROXY_UPSTREAMS: http://app:4317
+      # 포트 하나(8097)로 두 길을 받는다. 기계용 세 경로만 로그인 없이 app의 기계용 포트(4318, 토큰 필수)로 가고
+      # 나머지는 로그인한 사람만 메인 포트(4317)로 간다. skip_auth_routes 문제(CVE-2025-54576)는 v7.11.0에서 고쳐졌다.
+      OAUTH2_PROXY_UPSTREAMS: http://app:4317/,http://app:4318/events,http://app:4318/close-queue,http://app:4318/health
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: POST=^/events$$,GET=^/close-queue$$,GET=^/health$$
       OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE: /etc/oauth2-proxy/allowed-emails.txt
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       OAUTH2_PROXY_REDIRECT_URL: https://ai-office.example.com/oauth2/callback

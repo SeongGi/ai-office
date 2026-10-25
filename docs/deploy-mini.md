@@ -38,31 +38,18 @@ curl http://127.0.0.1:4318/health      # {"ok":true} 만 나와야 한다
 - 메인 포트는 프록시가 로그인시킨 사람만 온다고 믿고 토큰을 묻지 않는다. 그래서 `AGENT_FLOOR_TRUST_PROXY_EMAIL=1`과 `AGENT_FLOOR_ADMINS`가 함께 있을 때만 그렇게 동작한다. 메인 포트를 호스트에 공개하면 안 된다.
 - 컨테이너는 기기 이름이 `서버`다. 자기 안에서는 Orca를 못 쓰므로 닫기와 지시는 각 기기의 `close-agent`가 처리한다.
 
-## 3. nginx
+## 3. nginx (NPMplus)
 
-기계용 세 길은 글자가 정확히 맞는 것만 4318로 보낸다. 나머지는 모두 로그인 프록시(8097)로 간다.
+포트 하나만 쓴다. `ai-office.example.com` 전체를 `http://<서버기기 IP>:8097`로 보낸다(웹소켓 지원은 켜도 되고 꺼도 된다).
 
-```nginx
-location ~ ^/(events|close-queue|health)$ {
-    proxy_pass http://<서버기기 IP>:4318;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
+나누기는 oauth2-proxy가 한다(`docker-compose.yml`의 `OAUTH2_PROXY_UPSTREAMS`, `OAUTH2_PROXY_SKIP_AUTH_ROUTES`).
 
-location / {
-    proxy_pass http://<서버기기 IP>:8097;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_buffering off;
-    proxy_read_timeout 1h;
-}
-```
-
-- `/stream`(SSE)이 `location /`를 지나므로 `proxy_buffering off`와 긴 `proxy_read_timeout`이 꼭 필요하다.
-- 기계용 포트의 `/health`는 `{"ok":true}`만 답한다. 에이전트 수나 버전 같은 내용을 싣지 않는다. 이 길을 고칠 때 값을 더하지 않는다.
-- 기계용 포트는 `/events`, `/close-queue`, `/health` 말고는 404다. 사람 화면, `/state`, `/send`, `/close`는 이 길로 닿지 않는다.
+- `POST /events`, `GET /close-queue`, `GET /health`는 로그인 없이 app의 기계용 포트(4318)로 간다. 4318은 Bearer 토큰을 묻고 제어 권한이 없다.
+- 나머지는 구글 로그인을 거쳐 메인 포트(4317)로 간다.
+- `skip_auth_routes`의 CVE-2025-54576은 v7.11.0에서 고쳐졌다. 이 앱은 v7.15.5를 쓴다.
+- `/stream`(SSE)이 지나가므로 NPMplus 고급 설정에 `proxy_buffering off;`와 `proxy_read_timeout 1h;`를 넣는 것이 좋다.
+- 기계용 포트의 `/health`는 `{"ok":true}`만 답한다. 에이전트 수나 버전 같은 내용을 싣지 않는다.
+- 호스트의 4318 포트는 되돌리기와 내부 확인용으로 남아 있다. nginx에는 넣지 않는다.
 
 ## 4. 각 기기(노트북, 서버기기)의 환경
 
@@ -149,4 +136,4 @@ docker compose exec app tail -n 20 /data/audit.log
 
 - 기기 쪽: `AGENT_FLOOR_URL`을 `http://127.0.0.1:4317`로 돌리면(또는 값을 지우면) 이전처럼 그 기기 안에서만 돈다. `AGENT_FLOOR_TOKEN`과 `AGENT_FLOOR_DEVICE`도 지운다.
 - 서버 쪽: `docker compose down`(감사 볼륨은 남는다. 지우려면 `docker compose down -v`).
-- nginx: 위 두 `location`을 지운다.
+- 포트 나누기: `docker-compose.yml`의 두 줄을 `OAUTH2_PROXY_UPSTREAMS: http://app:4317` 하나로 되돌리고 `docker compose up -d auth`.
