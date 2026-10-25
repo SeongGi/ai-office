@@ -1,5 +1,5 @@
 export type Status = 'idle' | 'thinking' | 'working' | 'waiting' | 'done' | 'error' | 'offline';
-export type EventType = 'join' | 'status' | 'tool' | 'message' | 'task' | 'leave' | 'reset' | 'meeting';
+export type EventType = 'join' | 'status' | 'tool' | 'message' | 'task' | 'leave' | 'reset' | 'meeting' | 'rename';
 
 /** What clients POST to /events. Only `type` and `agent` are required. */
 export interface InboundEvent {

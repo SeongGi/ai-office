@@ -4,6 +4,7 @@
 //   GET  /stream        Server-Sent Events: a `snapshot`, then `event` + `effects`
 //   GET  /state         current world as JSON
 //   POST /close         {agent}: 그 메인 세션의 Orca 터미널에 /exit을 보낸다(화면 퇴사는 /events leave). 제어 권한 필요
+//   POST /rename        {agent, name}: 메인 세션의 이름을 고친다. 빈 이름은 고친 이름을 지운다. 제어 권한 필요
 //   POST /send          {agent, text}: 그 메인 세션의 Orca 터미널에 지시를 보낸다. 제어 권한 필요
 //   GET  /whoami        {control, email?}: 이 요청이 제어 권한을 가졌는지
 //   GET  /close-queue   ?device=<이름>: 다른 기기가 소유한 세션의 닫기와 지시 요청을 꺼내 간다(close-agent가 부른다)
@@ -15,7 +16,8 @@
 //   GET  /*             the built web app (dist/)
 import { createServer } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { appendFile, mkdir, readFile, stat } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seedEvents } from '../adapters/seed.mjs';
@@ -31,6 +33,9 @@ const SEND_MAX_CHARS = 2000;
 const SEND_RATE_MAX = 6;
 const SEND_RATE_WINDOW_MS = 60_000;
 const AUDIT_TEXT_MAX = 500;
+const NAME_MAX = 40;
+const NAMES_MAX = 500;
+const DEFAULT_NAMES = new Set(['Claude', 'Codex']);
 const listOf = (v) =>
   (Array.isArray(v) ? v : String(v || '').split(','))
     .map((x) => String(x).trim().toLowerCase())
@@ -66,6 +71,8 @@ export function startServer({
   admins = process.env.AGENT_FLOOR_ADMINS,
   allowBypassSend = process.env.AGENT_FLOOR_ALLOW_BYPASS_SEND === '1',
   auditPath = process.env.AGENT_FLOOR_AUDIT || resolve(here, '../data/audit.log'),
+  // 관리자가 고친 직원 이름을 남기는 파일. 기본은 감사 기록과 같은 폴더.
+  namesPath = process.env.AGENT_FLOOR_NAMES || join(dirname(auditPath), 'names.json'),
 } = {}) {
   const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
   const adminList = listOf(admins);
@@ -226,19 +233,67 @@ export function startServer({
     return mine;
   }
 
+  // ---- 직원 이름. customNames: 관리자가 고친 이름(파일로 남긴다), hookNames: 훅이 마지막으로 보낸 구체적인 이름.
+  // 둘 다 삽입 순서대로 500개까지만 두고, 넘치면 오래된 것부터 지운다.
+  const customNames = new Map();
+  const hookNames = new Map();
+  function remember(map, id, name) {
+    map.delete(id);
+    map.set(id, name);
+    while (map.size > NAMES_MAX) map.delete(map.keys().next().value);
+  }
+  try {
+    const saved = JSON.parse(readFileSync(namesPath, 'utf8'));
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      for (const [id, name] of Object.entries(saved)) {
+        if (typeof name === 'string' && name.trim()) remember(customNames, id.slice(0, 128), name.trim().slice(0, NAME_MAX));
+      }
+    }
+  } catch {
+    // 파일이 없거나 깨졌으면 빈 이름표로 시작한다.
+  }
+  // 저장은 하나씩 순서대로 쓴다. 쓰지 못해도 요청은 그대로 진행한다.
+  let saving = Promise.resolve();
+  function saveNames() {
+    saving = saving.then(async () => {
+      try {
+        await mkdir(dirname(namesPath), { recursive: true });
+        const tmp = `${namesPath}.tmp`;
+        await writeFile(tmp, JSON.stringify(Object.fromEntries(customNames)));
+        await rename(tmp, namesPath);
+      } catch {
+        // 이름 저장 실패가 이름 고치기를 막으면 안 된다.
+      }
+    });
+    return saving;
+  }
+
+  /** 정규화, 방을 정하고 적용, 방송. 내부에서만 쓴다(rename도 여기로 들어온다). */
+  function applyAndBroadcast(raw, tweak) {
+    const ev = normalizeEvent(raw);
+    if (!ev) return false;
+    tweak?.(ev);
+    assignRoom(ev);
+    const { effects } = applyEvent(state, ev);
+    broadcast('event', { event: ev, effects });
+    return true;
+  }
+
   function ingest(raw) {
+    // rename은 관리자 길(POST /rename)로만 만든다. 바깥 이벤트로는 받지 않는다.
+    if (raw && raw.type === 'rename') return false;
     if (raw && typeof raw.agent === 'string' && typeof raw.terminal === 'string' && /^term_[\w-]{8,64}$/.test(raw.terminal)) {
       terminals.set(raw.agent, raw.terminal);
     }
     if (raw && typeof raw.agent === 'string' && typeof raw.device === 'string' && raw.device.length <= 48) {
       devices.set(raw.agent, raw.device);
     }
-    const ev = normalizeEvent(raw);
-    if (!ev) return false;
-    assignRoom(ev);
-    const { effects } = applyEvent(state, ev);
-    broadcast('event', { event: ev, effects });
-    return true;
+    return applyAndBroadcast(raw, (ev) => {
+      if (!ev.name || !ev.agent || ev.parent || ev.subagent) return;
+      if (!DEFAULT_NAMES.has(ev.name)) remember(hookNames, ev.agent, ev.name);
+      const custom = customNames.get(ev.agent);
+      if (custom) ev.name = custom;
+    });
   }
 
   if (seed) {
@@ -391,6 +446,39 @@ export function startServer({
         const result = await closeSession(id);
         await audit(req, { ...agentInfo(id), kind: 'close', result: auditResult(result) });
         return json(res, 200, result);
+      }
+      if (pathname === '/rename' && req.method === 'POST') {
+        const body = await readBody(req);
+        const id = String(body?.agent ?? '');
+        const asked = typeof body?.name === 'string' ? body.name.trim() : '';
+        if (!canControl(req)) {
+          await audit(req, { ...agentInfo(id), kind: 'rename', result: 'denied', text: asked });
+          return json(res, 403, { error: '이 계정에는 제어 권한이 없어요' });
+        }
+        const refuse = async (status, reason) => {
+          await audit(req, { ...agentInfo(id), kind: 'rename', result: `refused: ${reason}`, text: asked });
+          return json(res, status, { ok: false, reason });
+        };
+        const agent = state.agents[id];
+        if (!agent) return refuse(404, '직원을 찾지 못했어요');
+        if (agent.parent || agent.role !== 'Lead') return refuse(400, '메인 세션만 이름을 고칠 수 있어요');
+        if (agent.status === 'offline') return refuse(400, '퇴사한 직원은 이름을 고칠 수 없어요');
+        if (typeof body?.name !== 'string') return refuse(400, '이름을 글자로 보내 주세요');
+        if (asked.length > NAME_MAX) return refuse(400, `이름은 ${NAME_MAX}자 이하로 써 주세요`);
+        let name;
+        if (asked) {
+          const ev = normalizeEvent({ type: 'rename', agent: id, name: asked });
+          name = ev.name;
+          remember(customNames, id, name);
+        } else {
+          // 비우면 고친 이름을 지우고 훅이 보낸 제목으로, 없으면 Claude로 되돌린다.
+          customNames.delete(id);
+          name = hookNames.get(id) || 'Claude';
+        }
+        applyAndBroadcast({ type: 'rename', agent: id, name });
+        await saveNames();
+        await audit(req, { ...agentInfo(id), kind: 'rename', result: 'ok', text: name });
+        return json(res, 200, { ok: true, name });
       }
       if (pathname === '/send' && req.method === 'POST') {
         const body = await readBody(req);

@@ -138,3 +138,25 @@ test('meeting end clears it, expiry is swept, bad meeting events are rejected', 
   assert.equal(s.meeting, undefined);
   assert.equal(normalizeEvent({ type: 'meeting' }), null);
 });
+
+test('rename: 있는 직원 이름만 바꾸고, 없는 직원은 만들지 않으며, 기록과 상태를 건드리지 않는다', () => {
+  const s = createState();
+  run(s, { type: 'join', agent: 'a', team: 't', name: '제목' });
+  const before = { ...s.agents.a, history: [...s.agents.a.history] };
+  const { effects } = run(s, { type: 'rename', agent: 'a', name: '  새   이름 ' });
+  assert.equal(s.agents.a.name, '새 이름');
+  assert.deepEqual(effects, []);
+  assert.deepEqual(s.agents.a.history, before.history);
+  assert.equal(s.agents.a.status, before.status);
+  assert.equal(s.agents.a.lastSeen, before.lastSeen);
+  run(s, { type: 'rename', agent: 'ghost', name: '없는 직원' });
+  assert.equal(s.agents.ghost, undefined);
+  assert.equal(Object.keys(s.teams).length, 1);
+  // 기본 이름 규칙을 거치지 않으므로 Claude로도 바꿀 수 있다. 이후 훅의 Claude는 여전히 덮지 못한다.
+  run(s, { type: 'rename', agent: 'a', name: 'Claude' });
+  assert.equal(s.agents.a.name, 'Claude');
+  run(s, { type: 'rename', agent: 'a', name: 'x'.repeat(60) });
+  assert.equal(s.agents.a.name.length, 40);
+  assert.equal(normalizeEvent({ type: 'rename', agent: 'a', name: '   ' }), null);
+  assert.equal(normalizeEvent({ type: 'rename', agent: 'a' }), null);
+});

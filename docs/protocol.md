@@ -12,7 +12,7 @@ Only `type` and `agent` are required. Any event creates the agent and its team i
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `type` | `join` `status` `tool` `message` `task` `leave` `reset` | What happened. |
+| `type` | `join` `status` `tool` `message` `task` `leave` `reset` `rename` | What happened. |
 | `agent` | string, or `{ id, name?, role?, source? }` | Stable id for this agent. Reuse it for every event. |
 | `name` | string | Display name. Defaults to a tidied version of the id. |
 | `role` | string | Shown under the name and decides shirt colour. `Lead` gets the head desk and a headset. |
@@ -37,6 +37,7 @@ Only `type` and `agent` are required. Any event creates the agent and its team i
 - **task**: update the team whiteboard.
 - **leave**: the agent stands up and walks out. It is removed a few seconds later.
 - **reset**: clear the whole floor.
+- **rename**: `{ type, agent, name }`. The admin renamed an existing agent (name up to 40 chars). Only the server makes it, through `POST /rename`; `/events` rejects it.
 
 ## Lifetime
 

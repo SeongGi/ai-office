@@ -314,3 +314,164 @@ test('orca-send: 가드와 배열 인자 전송', async () => {
   const boom = (cmd, args, opts, cb) => cb(new Error('orca missing'));
   assert.match((await sendOrcaPrompt(TERM, 'hi', boom)).reason, /orca 호출 실패/);
 });
+
+// ---- 이름 고치기
+
+const ADMIN = { admins: ME, trustProxyEmail: true };
+const lead = (base, agent = 'claude-code:aaaa1111', extra = {}) =>
+  postJson(base, '/events', [{ type: 'join', agent, team: 'T', role: 'Lead', name: '결제 버그', status: 'idle', ...extra }]);
+const hook = (base, agent, extra = {}) =>
+  postJson(base, '/events', [{ type: 'status', agent, team: 'T', role: 'Lead', status: 'thinking', ...extra }]);
+const readAudit = async (path) => (await readFile(path, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+const AG = 'claude-code:aaaa1111';
+
+test('rename: 관리자가 고치면 훅 제목이 덮지 못하고, 감사 기록이 남는다', async () => {
+  await withServer(ADMIN, async (base, floor, auditPath) => {
+    await lead(base);
+    assert.equal(floor.state.agents[AG].name, '결제 버그');
+    const res = await postJson(base, '/rename', { agent: AG, name: '  내 이름  ' }, asMe);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, name: '내 이름' });
+    assert.equal(floor.state.agents[AG].name, '내 이름');
+    assert.equal(floor.state.agents[AG].history.length, 1, '기록에 남지 않는다');
+    await hook(base, AG, { name: '새 제목' });
+    await hook(base, AG, { name: 'Claude' });
+    assert.equal(floor.state.agents[AG].name, '내 이름');
+    const rows = await readAudit(auditPath);
+    const last = rows[rows.length - 1];
+    assert.equal(last.kind, 'rename');
+    assert.equal(last.result, 'ok');
+    assert.equal(last.text, '내 이름');
+  });
+});
+
+test('rename: 권한 없으면 403과 denied 기록(시도한 이름 포함), 이름은 그대로', async () => {
+  await withServer(ADMIN, async (base, floor, auditPath) => {
+    await lead(base);
+    const eve = { 'x-auth-request-email': 'eve@test.dev' };
+    assert.equal((await postJson(base, '/rename', { agent: AG, name: '해킹' }, eve)).status, 403);
+    assert.equal((await postJson(base, '/rename', { agent: AG, name: '해킹' })).status, 403);
+    assert.equal(floor.state.agents[AG].name, '결제 버그');
+    const rows = await readAudit(auditPath);
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((r) => r.kind === 'rename' && r.result === 'denied' && r.text === '해킹' && r.agent === AG));
+  });
+});
+
+test('rename: 없는 직원 404, 41자와 글자 아닌 이름 400, 서브에이전트와 퇴사자는 거절하며 모두 기록', async () => {
+  await withServer(ADMIN, async (base, floor, auditPath) => {
+    await lead(base);
+    await postJson(base, '/events', [{ type: 'join', agent: `${AG}:kid`, parent: AG, role: 'reviewer', name: '리뷰어' }]);
+    await lead(base, 'claude-code:bbbb2222');
+    await postJson(base, '/events', [{ type: 'leave', agent: 'claude-code:bbbb2222' }]);
+    assert.equal((await postJson(base, '/rename', { agent: 'nobody', name: 'x' }, asMe)).status, 404);
+    assert.equal((await postJson(base, '/rename', { agent: AG, name: 'a'.repeat(41) }, asMe)).status, 400);
+    assert.equal((await postJson(base, '/rename', { agent: AG, name: 42 }, asMe)).status, 400);
+    assert.equal((await postJson(base, '/rename', { agent: AG }, asMe)).status, 400);
+    assert.equal((await postJson(base, '/rename', { agent: `${AG}:kid`, name: '새 이름' }, asMe)).status, 400);
+    assert.equal((await postJson(base, '/rename', { agent: 'claude-code:bbbb2222', name: '새 이름' }, asMe)).status, 400);
+    assert.equal((await postJson(base, '/rename', { agent: AG, name: 'a'.repeat(40) }, asMe)).status, 200, '40자는 된다');
+    assert.equal(floor.state.agents[`${AG}:kid`].name, '리뷰어');
+    const rows = await readAudit(auditPath);
+    assert.deepEqual(rows.map((r) => r.result.split(':')[0]), ['refused', 'refused', 'refused', 'refused', 'refused', 'refused', 'ok']);
+    assert.equal(rows[1].text, 'a'.repeat(41));
+  });
+});
+
+test('rename: 빈 이름은 고친 이름을 지우고 훅 제목으로, 훅 제목이 없으면 Claude로 되돌린다', async () => {
+  await withServer(ADMIN, async (base, floor) => {
+    await lead(base);
+    await postJson(base, '/rename', { agent: AG, name: '내 이름' }, asMe);
+    await hook(base, AG, { name: '훅 제목' });
+    const res = await postJson(base, '/rename', { agent: AG, name: '   ' }, asMe);
+    assert.deepEqual(await res.json(), { ok: true, name: '훅 제목' });
+    assert.equal(floor.state.agents[AG].name, '훅 제목');
+    await hook(base, AG, { name: '다음 제목' });
+    assert.equal(floor.state.agents[AG].name, '다음 제목', '지운 뒤에는 훅 제목이 다시 따라간다');
+    // 훅 제목을 한 번도 받지 못한 직원(기본 이름만 보낸 세션)은 Claude로
+    await lead(base, 'claude-code:cccc3333', { name: 'Claude' });
+    await postJson(base, '/rename', { agent: 'claude-code:cccc3333', name: '임시' }, asMe);
+    const back = await postJson(base, '/rename', { agent: 'claude-code:cccc3333', name: '' }, asMe);
+    assert.deepEqual(await back.json(), { ok: true, name: 'Claude' });
+  });
+});
+
+test('rename: 고친 이름은 파일에 남아 서버를 다시 띄워도 유지되고 seed보다 먼저 읽힌다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-names-'));
+  const namesPath = join(dir, 'names.json');
+  await withServer({ ...ADMIN, namesPath }, async (base) => {
+    await lead(base);
+    await postJson(base, '/rename', { agent: AG, name: '오래 가는 이름' }, asMe);
+    assert.deepEqual(JSON.parse(await readFile(namesPath, 'utf8')), { [AG]: '오래 가는 이름' });
+  });
+  await withServer({ ...ADMIN, namesPath }, async (base, floor) => {
+    await lead(base); // 새로 올라온 같은 id(seed나 훅)
+    assert.equal(floor.state.agents[AG].name, '오래 가는 이름');
+    await postJson(base, '/events', [{ type: 'reset' }]);
+    await lead(base);
+    assert.equal(floor.state.agents[AG].name, '오래 가는 이름', 'reset 뒤에도 남는다');
+    // 같은 id가 퇴사했다가 다시 join해도 고친 이름이 적용된다
+    await postJson(base, '/events', [{ type: 'leave', agent: AG }]);
+    await lead(base, AG, { name: '다른 제목' });
+    assert.equal(floor.state.agents[AG].name, '오래 가는 이름');
+    // 서버를 다시 띄운 직후 빈 이름으로 지우면 Claude로
+    const res = await postJson(base, '/rename', { agent: AG, name: '' }, asMe);
+    assert.equal((await res.json()).name, '다른 제목');
+  });
+  await withServer({ ...ADMIN, namesPath }, async (base, floor) => {
+    await lead(base, AG, { name: 'Claude' });
+    const res = await postJson(base, '/rename', { agent: AG, name: '' }, asMe);
+    assert.equal((await res.json()).name, 'Claude');
+    assert.deepEqual(JSON.parse(await readFile(namesPath, 'utf8')), {}, '지우면 파일에서도 빠진다');
+    assert.equal(floor.state.agents[AG].name, 'Claude');
+  });
+});
+
+test('rename: 깨진 파일은 빈 이름표로 시작하고, 500개를 넘으면 오래된 것부터 지운다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-names-'));
+  const namesPath = join(dir, 'names.json');
+  await writeFile(namesPath, '{깨진');
+  await withServer({ ...ADMIN, namesPath }, async (base, floor) => {
+    await lead(base);
+    assert.equal(floor.state.agents[AG].name, '결제 버그');
+  });
+  const many = Object.fromEntries(Array.from({ length: 502 }, (_, i) => [`id${i}`, `이름${i}`]));
+  await writeFile(namesPath, JSON.stringify(many));
+  await withServer({ ...ADMIN, namesPath }, async (base, floor) => {
+    await lead(base, 'id0', { name: '훅' });
+    await lead(base, 'id501', { name: '훅' });
+    assert.equal(floor.state.agents.id0.name, '훅', '가장 오래된 둘은 밀려났다');
+    assert.equal(floor.state.agents.id501.name, '이름501');
+    await postJson(base, '/rename', { agent: 'id501', name: '갱신' }, asMe);
+    const saved = JSON.parse(await readFile(namesPath, 'utf8'));
+    assert.equal(Object.keys(saved).length, 500);
+    assert.equal(Object.keys(saved).pop(), 'id501', '다시 저장하면 순서가 맨 뒤로 간다');
+  });
+});
+
+test('rename: 저장 파일을 쓰지 못해도 이름 고치기는 된다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-names-'));
+  await writeFile(join(dir, 'blocker'), 'x');
+  await withServer({ ...ADMIN, namesPath: join(dir, 'blocker', 'names.json') }, async (base, floor) => {
+    await lead(base);
+    const res = await postJson(base, '/rename', { agent: AG, name: '써지지 않는 이름' }, asMe);
+    assert.equal(res.status, 200);
+    assert.equal(floor.state.agents[AG].name, '써지지 않는 이름');
+  });
+});
+
+test('rename: /events로 들어온 rename은 메인 포트와 기계용 포트 모두 거절하고 이름은 그대로', async () => {
+  await withServer({ token: 'tt', machinePort: 0 }, async (base, floor) => {
+    const m = `http://127.0.0.1:${floor.machineServer.address().port}`;
+    const auth = { Authorization: 'Bearer tt' };
+    await postJson(base, '/events', [{ type: 'join', agent: AG, team: 'T', role: 'Lead', name: '결제 버그' }], auth);
+    const evil = [{ type: 'rename', agent: AG, name: '위조' }];
+    const viaMain = await postJson(base, '/events', evil, auth);
+    assert.equal(viaMain.status, 400);
+    assert.deepEqual(await viaMain.json(), { accepted: 0, rejected: 1 });
+    assert.equal((await postJson(m, '/events', evil, auth)).status, 400);
+    assert.equal(floor.ingest({ type: 'rename', agent: AG, name: '위조' }), false);
+    assert.equal(floor.state.agents[AG].name, '결제 버그');
+    assert.equal((await postJson(m, '/rename', { agent: AG, name: 'x' }, auth)).status, 404, '기계용 포트에는 길이 없다');
+  });
+});

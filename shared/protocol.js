@@ -6,7 +6,7 @@ export const PROTOCOL_VERSION = 1;
 
 export const STATUSES = ['idle', 'thinking', 'working', 'waiting', 'done', 'error', 'offline'];
 
-export const EVENT_TYPES = ['join', 'status', 'tool', 'message', 'task', 'leave', 'reset', 'meeting'];
+export const EVENT_TYPES = ['join', 'status', 'tool', 'message', 'task', 'leave', 'reset', 'meeting', 'rename'];
 
 export const MEETING_MS = 10 * 60_000;
 const SYSTEM_AGENT = 'system';
@@ -65,6 +65,12 @@ export function normalizeEvent(raw, now = Date.now()) {
     if (raw.all === true) ev.all = true;
     if (ev.text === undefined) delete ev.text;
     return ev;
+  }
+
+  if (type === 'rename') {
+    // 관리자가 직원 이름을 고친 것. 서버 안에서만 만들고, 이름이 비면 쓸 수 없다.
+    const name = clip(raw.name, 40);
+    return name ? { type, ts: Number.isFinite(raw.ts) ? raw.ts : now, agent: agentId, name } : null;
   }
 
   const teamRaw = typeof raw.team === 'object' && raw.team ? raw.team : { name: raw.team };
@@ -232,6 +238,13 @@ export function applyEvent(state, rawEv) {
       if (who) state.meeting.by = who.id;
       effects.push({ kind: 'meeting', on: true, ...(rawEv.text ? { topic: rawEv.text } : {}) });
     }
+    return { state, effects };
+  }
+
+  // 이름 고치기는 이미 있는 직원에게만 쓴다. 기본 이름 규칙을 거치지 않고, 기록과 상태와 lastSeen을 건드리지 않는다.
+  if (rawEv.type === 'rename') {
+    const who = state.agents[rawEv.agent];
+    if (who && rawEv.name) who.name = rawEv.name;
     return { state, effects };
   }
 
