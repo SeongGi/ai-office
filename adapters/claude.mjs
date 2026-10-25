@@ -2,9 +2,10 @@
 // Receives the JSON object Claude Code writes to a hook's stdin.
 // https://docs.claude.com/en/docs/claude-code/hooks
 import { describeTool, deviceName, pretty, shortId, shortToolName, slugKey, teamFromCwd } from './common.mjs';
-import { clipText, readTranscriptTail } from './transcript.mjs';
+import { clipText, readTranscriptTail, readTranscriptTitle, shortTitle } from './transcript.mjs';
 
 const SPAWN_TOOLS = new Set(['Task', 'Agent']);
+const TITLE_HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop']);
 
 /**
  * @param {Record<string, any>} input hook payload
@@ -16,11 +17,16 @@ export function fromClaude(input, opts = {}) {
   const source = opts.source || 'claude-code';
   const lead = `${source}:${shortId(input.session_id)}`;
   const team = teamFromCwd(input.cwd);
+  // 세션 제목은 기록 끝을 읽어야 하므로 시작, 질문, 멈춤 훅에서만 읽는다. 서브에이전트에는 쓰지 않는다.
+  // 다른 훅은 기본 이름을 보내고, 서버가 기본 이름으로 구체적인 이름을 덮지 않게 막는다.
+  const isSub = input.agent_id || input.agent_type;
+  const titled = !isSub && TITLE_HOOKS.has(input.hook_event_name) && typeof input.transcript_path === 'string';
+  const title = titled ? shortTitle(readTranscriptTitle(input.transcript_path)) : undefined;
   const base = {
     agent: lead,
     team,
     source,
-    name: process.env.AGENT_FLOOR_NAME || opts.name || (source === 'codex' ? 'Codex' : 'Claude'),
+    name: process.env.AGENT_FLOOR_NAME || opts.name || title || (source === 'codex' ? 'Codex' : 'Claude'),
     role: 'Lead',
     ...(input.model ? { model: String(input.model) } : {}),
     ...(input.cwd ? { cwd: String(input.cwd) } : {}),

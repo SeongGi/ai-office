@@ -75,3 +75,53 @@ export function readTranscriptTail(path, size) {
     return {};
   }
 }
+
+/** 제목을 seed와 같은 규칙으로 줄인다(공백 한 칸, 14자 넘으면 13자 + …). */
+export function shortTitle(title) {
+  if (typeof title !== 'string') return undefined;
+  const s = title.replace(/\s+/g, ' ').trim();
+  if (!s) return undefined;
+  return s.length > 14 ? `${s.slice(0, 13)}…` : s;
+}
+
+/**
+ * jsonl 끝부분 글자에서 세션 제목을 찾는다. /rename으로 붙인 customTitle이 aiTitle보다 앞선다.
+ * @param {string} tail
+ * @returns {string | undefined}
+ */
+export function parseTranscriptTitle(tail) {
+  let ai;
+  const lines = String(tail || '').split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line || line[0] !== '{') continue;
+    let o;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue; // 잘린 첫 줄이나 깨진 줄
+    }
+    if (!o || typeof o !== 'object') continue;
+    if (typeof o.customTitle === 'string' && o.customTitle.trim()) return o.customTitle;
+    if (ai === undefined && typeof o.aiTitle === 'string' && o.aiTitle.trim()) ai = o.aiTitle;
+  }
+  return ai;
+}
+
+/** 파일 끝 64KB를 읽어 parseTranscriptTitle에 넘긴다. 실패하면 undefined. */
+export function readTranscriptTitle(path, size) {
+  try {
+    const total = size ?? statSync(path).size;
+    const len = Math.min(total, TAIL_BYTES);
+    const fd = openSync(path, 'r');
+    try {
+      const buf = Buffer.alloc(len);
+      const n = readSync(fd, buf, 0, len, total - len);
+      return parseTranscriptTitle(buf.toString('utf8', 0, n));
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+}

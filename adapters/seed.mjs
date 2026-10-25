@@ -4,7 +4,7 @@ import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { shortId, teamFromCwd } from './common.mjs';
-import { readTranscriptTail } from './transcript.mjs';
+import { readTranscriptTail, readTranscriptTitle, shortTitle } from './transcript.mjs';
 
 const HEAD_BYTES = 64 * 1024;
 
@@ -15,19 +15,6 @@ function cwdOf(file) {
     const n = readSync(fd, buf, 0, HEAD_BYTES, 0);
     const m = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(buf.toString('utf8', 0, n));
     return m ? JSON.parse(`"${m[1]}"`) : null;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function titleOf(file, size) {
-  const fd = openSync(file, 'r');
-  try {
-    const len = Math.min(size, HEAD_BYTES);
-    const buf = Buffer.alloc(len);
-    const n = readSync(fd, buf, 0, len, size - len);
-    const all = [...buf.toString('utf8', 0, n).matchAll(/"aiTitle":"((?:[^"\\]|\\.)*)"/g)];
-    return all.length ? JSON.parse(`"${all[all.length - 1][1]}"`) : null;
   } finally {
     closeSync(fd);
   }
@@ -57,14 +44,14 @@ export function seedEvents({ sinceMs = 2 * 60 * 60 * 1000, root = join(homedir()
         if (now - st.mtimeMs > sinceMs) continue;
         const cwd = cwdOf(path);
         if (!cwd) continue;
-        const title = titleOf(path, st.size);
+        const title = shortTitle(readTranscriptTitle(path, st.size));
         const { lastPrompt, lastReply, permission } = readTranscriptTail(path, st.size); // 실패하면 빈 값
         events.push({
           type: 'join',
           agent: `claude-code:${shortId(f.replace(/\.jsonl$/, ''))}`,
           team: teamFromCwd(cwd),
           source: 'claude-code',
-          name: title ? (title.length > 14 ? `${title.slice(0, 13)}…` : title) : 'Claude',
+          name: title || 'Claude',
           role: 'Lead',
           cwd,
           status: 'idle',
