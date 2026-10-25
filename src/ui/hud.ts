@@ -4,7 +4,8 @@ import type { Anchor } from '../world/World';
 import { looksFor, shirtFor, sourceLabel, STATUS_COLORS, teamAccent } from '../world/palette';
 import { CARD_KO, PILL_KO, PILL_MEETING_KO, pillDetail, STATUS_LABEL_KO as STATUS_LABEL } from './labels';
 import { meetingCovers } from '../../shared/places';
-import { controlAllowed, dismissAgent, sendInstruction } from '../core/connection';
+import { controlAllowed, dismissAgent, renameAgent, sendInstruction } from '../core/connection';
+import pencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw';
 import { icon } from './icons';
 import { REPO_URL } from '../config';
 
@@ -139,6 +140,8 @@ export class Hud {
   private sendNotes = new Map<string, string>();
   private sendBlocked = new Map<string, string>();
   private sending = new Set<string>();
+  /** 이름을 고치는 중인 직원. 고치는 동안에는 입력칸이 지워지지 않도록 카드를 다시 그리지 않는다. */
+  private editing: string | null = null;
   private state: WorldState | null = null;
   private selected: string | null = null;
   private hovered: string | null = null;
@@ -268,13 +271,16 @@ export class Hud {
   private renderCard() {
     const s = this.state!;
     const a = this.selected ? s.agents[this.selected] : undefined;
+    // 다른 직원을 고르거나 카드가 닫히면 고치기는 끝난다.
+    if (this.editing && this.editing !== a?.id) this.editing = null;
     if (!a) {
       this.card.classList.remove('show');
       this.cardKey = '';
       return;
     }
+    if (this.editing === a.id && this.card.querySelector('.name-input')) return;
     const canSend = this.mode === 'live' && controlAllowed();
-    const key = `${a.id}|${a.status}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${a.lastPrompt}|${a.lastReply}|${canSend}|${Math.floor(Date.now() / 10000)}`;
+    const key = `${a.id}|${a.name}|${a.status}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${a.lastPrompt}|${a.lastReply}|${canSend}|${Math.floor(Date.now() / 10000)}`;
     if (key === this.cardKey) return;
     this.cardKey = key;
     const team = s.teams[a.team];
@@ -288,6 +294,8 @@ export class Hud {
     const kind = isMain ? CARD_KO.mainSession : `${CARD_KO.subagent} (${a.role})`;
     const lastTask = [...a.history].reverse().find((h) => h.kind === 'task' && h.text)?.text;
     const job = (isMain ? lastTask || team?.task : undefined) || a.activity || '아직 아무것도 없어요';
+    const nowText = a.activity || '아직 아무것도 없어요';
+    const canRename = isMain && canSend && a.status !== 'offline';
     const facts: [string, string][] = [[CARD_KO.kind, kind]];
     if (!isMain && a.parent) facts.push([CARD_KO.parent, parent ? `${parent.name} (${a.parent.split(':')[1] || a.parent})` : a.parent]);
     facts.push([CARD_KO.source, sourceLabel(a.source)], [CARD_KO.session, shortSession], [CARD_KO.project, team?.name || a.team]);
@@ -324,7 +332,10 @@ export class Hud {
       <div class="card-head">
         <span class="avatar" style="--shirt:${shirtFor(a.role)};--skin:${look.skin};--hair:${look.hair}" aria-hidden="true"><i></i></span>
         <div class="who">
-          <h2>${esc(a.name)}</h2>
+          <div class="name-row">
+            <h2>${esc(a.name)}</h2>
+            ${canRename ? `<button type="button" class="icon-btn name-edit" aria-label="${CARD_KO.rename}" title="${CARD_KO.rename}">${pencil.replace('<svg ', '<svg aria-hidden="true" focusable="false" class="icon" ')}</button>` : ''}
+          </div>
           <p>${esc(team?.name || a.team)}의 ${esc(a.role)}</p>
         </div>
         <button type="button" class="icon-btn close" aria-label="닫기">${icon('x')}</button>
@@ -337,7 +348,7 @@ export class Hud {
       <div class="now">
         <p class="job-label">${CARD_KO.job}</p>
         <p class="job-text">${esc(job)}</p>
-        <p class="now-text">${esc(a.activity || '아직 아무것도 없어요')}</p>
+        ${nowText !== job ? `<p class="now-text">${esc(nowText)}</p>` : ''}
         ${a.tool ? `<p class="now-tool">${esc(a.tool)}</p>` : ''}
       </div>
       ${convo}
@@ -361,6 +372,7 @@ export class Hud {
         <button type="button" class="leave-btn">${CARD_KO.leave}</button>
         <p class="leave-note">${CARD_KO.leaveNote}</p>
       </div>`;
+    this.card.querySelector('.name-edit')?.addEventListener('click', () => this.startRename(a));
     const leaveBtn = this.card.querySelector<HTMLButtonElement>('.leave-btn')!;
     leaveBtn.addEventListener('click', () => {
       const now = Date.now();
@@ -444,6 +456,53 @@ export class Hud {
     this.card.querySelector('.close')!.addEventListener('click', () => this.actions.select(null));
     this.card.querySelectorAll<HTMLButtonElement>('.person').forEach((b) => b.addEventListener('click', () => this.actions.select(b.dataset.id!)));
     this.card.classList.add('show');
+  }
+
+  /** 이름 글자 자리를 입력칸, 저장, 취소로 바꾼다. Enter는 저장, Esc는 취소, 빈 칸 저장은 고친 이름 지우기. */
+  private startRename(a: Agent) {
+    const row = this.card.querySelector<HTMLElement>('.name-row');
+    if (!row) return;
+    this.editing = a.id;
+    row.innerHTML = '';
+    const input = el('input', 'name-input') as HTMLInputElement;
+    input.type = 'text';
+    input.maxLength = 40;
+    input.value = a.name;
+    input.placeholder = CARD_KO.renamePlaceholder;
+    input.setAttribute('aria-label', CARD_KO.rename);
+    const save = el('button', 'name-save', CARD_KO.renameSave) as HTMLButtonElement;
+    save.type = 'button';
+    const cancel = el('button', 'name-cancel', CARD_KO.renameCancel) as HTMLButtonElement;
+    cancel.type = 'button';
+    const note = el('p', 'name-note');
+    row.append(input, save, cancel, note);
+    const finish = () => {
+      this.editing = null;
+      this.cardKey = '';
+      this.renderCard();
+    };
+    input.addEventListener('input', () => {
+      note.textContent = input.value.trim() ? '' : CARD_KO.renameClear;
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing) return; // 한글 조합 중의 Enter는 글자를 확정하는 키다.
+      if (e.key === 'Enter') save.click();
+      else if (e.key === 'Escape') finish();
+    });
+    cancel.addEventListener('click', finish);
+    save.addEventListener('click', () => {
+      input.disabled = save.disabled = cancel.disabled = true;
+      note.textContent = CARD_KO.renameWorking;
+      void renameAgent(a.id, input.value).then((r) => {
+        if (this.editing !== a.id || !input.isConnected) return; // 그 사이 다른 직원을 골랐다
+        if (r.ok) return finish();
+        input.disabled = save.disabled = cancel.disabled = false;
+        note.textContent = `${CARD_KO.renameFail}: ${r.reason || ''}`;
+        input.focus();
+      });
+    });
+    input.focus();
+    input.select();
   }
 
   // ---------------------------------------------------------------- tags & bubbles (every frame)

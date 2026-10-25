@@ -102,6 +102,28 @@ export async function sendInstruction(agent: string, text: string): Promise<Send
   }
 }
 
+export interface RenameResult {
+  ok: boolean;
+  name?: string;
+  reason?: string;
+}
+
+/** 직원 이름을 고친다. 빈 이름은 고친 이름을 지우고 세션 제목으로 돌린다. 거절 사유는 서버가 한국어로 준다. */
+export async function renameAgent(agent: string, name: string): Promise<RenameResult> {
+  try {
+    const res = await fetch(`${serverBase()}/rename`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent, name }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (body?.ok === true) return { ok: true, name: body.name };
+    return { ok: false, reason: body?.reason || body?.error || `서버 응답 ${res.status}` };
+  } catch {
+    return { ok: false, reason: '서버에 닿지 못했어요' };
+  }
+}
+
 export function connect() {
   if (params.has('demo') || (DEMO_ONLY && !params.has('server'))) {
     startDemo();

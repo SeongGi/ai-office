@@ -733,6 +733,72 @@ button {
   letter-spacing: -0.015em;
 }
 
+.name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.name-row h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.name-edit {
+  width: 26px;
+  height: 26px;
+  color: var(--text-2);
+}
+
+.name-edit .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.name-input {
+  box-sizing: border-box;
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.name-save,
+.name-cancel {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.name-save:disabled,
+.name-cancel:disabled,
+.name-input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.who .name-note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .who p {
   margin: 2px 0 0;
   color: var(--text-2);
