@@ -485,7 +485,8 @@ export class Hud {
       note.textContent = input.value.trim() ? '' : CARD_KO.renameClear;
     });
     input.addEventListener('keydown', (e) => {
-      if (e.isComposing) return; // 한글 조합 중의 Enter는 글자를 확정하는 키다.
+      // 한글 조합 중의 Enter는 글자를 확정하는 키다. Safari는 조합이 끝난 뒤 keyCode 229로 한 번 더 보낸다.
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') save.click();
       else if (e.key === 'Escape') finish();
     });
