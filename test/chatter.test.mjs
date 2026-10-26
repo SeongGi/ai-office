@@ -101,3 +101,20 @@ test('two idle cats with only a lastReply still chat in a break room', () => {
   assert.ok(chat[0].text.includes('리팩터링을 끝냈어요.'), chat[0].text);
   assert.ok(chat[1].text.includes('문서를 갱신했어요.'), chat[1].text);
 });
+
+test('makeChat keeps $ patterns in the topic as plain text', () => {
+  const a = cat('a', 'working', { activity: '실행 중: echo $1 $&' });
+  const b = cat('b', 'idle', { lastReply: '가격은 $5예요.' });
+  const chat = makeChat(a, b, { rnd: () => 0 });
+  assert.ok(chat[0].text.includes('echo $1 $&'), chat[0].text);
+  assert.ok(chat[1].text.includes('$5'), chat[1].text);
+});
+
+test('busy lines do not double up the trailing 중', () => {
+  const a = cat('a', 'working', { activity: 'CheckoutForm.tsx 고치는 중' });
+  const b = cat('b', 'thinking', { activity: '다음 단계 계획하는 중' });
+  for (const r of [0, 0.4, 0.8, 0.99]) {
+    const chat = makeChat(a, b, { rnd: () => r });
+    for (const l of chat) assert.ok(!/중 하는 중/.test(l.text), l.text);
+  }
+});

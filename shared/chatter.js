@@ -45,7 +45,7 @@ export function topicOf(agent, teamTask) {
 }
 
 const OPEN = {
-  busy: ['{to}, 저 지금 {x}', '{to}, 저는 {x}', '{to}, 지금 {x} 하는 중이에요'],
+  busy: ['{to}, 저 지금 {x}', '{to}, 저는 {x}', '{to}, 손이 바빠요. {x}'],
   done: ['방금 끝냈어요. {x}', '{to}, 하나 끝냈어요. {x}', '막 마무리했어요. {x}'],
   error: ['막혔어요… {x}', '{to}, 문제가 생겼어요. {x}', '으아, 에러가 났어요. {x}'],
   waiting: ['저 답 기다리는 중이에요. {x}', '{to}, 승인을 기다리고 있어요. {x}', '잠깐 멈춰 있어요. {x}'],
@@ -54,7 +54,7 @@ const OPEN = {
 };
 
 const REPLY = {
-  busy: ['저는 {x}', '저는 지금 {x} 하는 중이에요', '저도 바빠요. {x}'],
+  busy: ['저는 {x}', '저는 지금 {x}', '저도 바빠요. {x}'],
   done: ['저도 방금 하나 끝냈어요. {x}', '저는 이걸 마무리했어요. {x}', '저도 한 건 끝냈어요. {x}'],
   error: ['저도 막혔어요. {x}', '저도 에러가 났어요. {x}', '저는 이런 문제가 있어요. {x}'],
   waiting: ['저는 승인 기다리는 중이에요', '저도 답을 기다려요', '저는 잠깐 멈춰 있어요'],
@@ -70,7 +70,7 @@ const MOOD_X_MAX = 30;
 const pickOne = (list, rnd) => list[Math.min(list.length - 1, Math.floor(rnd() * list.length))];
 
 function fill(tpl, to, x) {
-  return tpl.replace('{to}', to).replace('{x}', x).replace(/\s+/g, ' ').trim();
+  return tpl.replace('{to}', () => to).replace('{x}', () => x).replace(/\s+/g, ' ').trim();
 }
 
 /** 틀을 채우되 한 줄이 LINE_MAX자를 넘으면 이야깃거리를 줄인다. */
