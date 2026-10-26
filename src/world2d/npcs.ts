@@ -129,9 +129,9 @@ export class Npcs {
       c.z = z + 0.1;
       c.look = look;
     };
-    put(boss, INTERVIEW.boss, 0);
-    put(guest, INTERVIEW.candidate, 0);
-    put(w1, INTERVIEW.waiting[0], 0.5);
+    put(boss, INTERVIEW.boss, -0.7);
+    put(guest, INTERVIEW.candidate, 0.7);
+    put(w1, INTERVIEW.waiting[0], 0.6);
   }
 
   /** Sort keys: feet depth of each cat, or a far-away value when it is not shown. */
@@ -208,10 +208,10 @@ export class Npcs {
     guest.act.cheer = joy ? 1 : 0;
     if (joy) guest.hop = Math.abs(Math.sin(u * 7)) * 0.16 * Math.max(0, 1 - u * 0.5);
     // The waiting candidate glances at the table now and then and claps for a pass.
-    w1.look = Math.sin(t * 0.35 + w1.seed * 6) > 0.4 ? 0.8 : 0.3;
+    w1.look = Math.sin(t * 0.35 + w1.seed * 6) > 0.4 ? 0.9 : 0.4;
     w1.hop = joy ? Math.abs(Math.sin(u * 6)) * 0.07 : 0;
     w1.act.cheer = joy ? 0.5 : 0;
-    boss.look = speaker === 1 ? 0.0 : Math.sin(t * 0.5) * 0.25;
+    boss.look = speaker === 1 ? -0.8 : -0.6 + Math.sin(t * 0.5) * 0.2;
   }
 
   /** Start a bubble unless one with the same text is already running. */
@@ -352,15 +352,17 @@ export class Npcs {
       const bw = (c.sayW + 0.34) * k;
       const lh = 0.27 * k;
       const bh = lh * lines.length + 0.2 * k;
-      const x = c.x;
+      // The two at the table keep their bubbles above and away from each other, and inside the wall.
+      const x = c.role === 'boss' ? c.x - (bw / 2 - 0.3 * k) : c.role === 'guest' ? c.x + (bw / 2 - 0.5 * k) : c.x;
       const bottom = c.z - (HEAD_TOP + 0.3 - 0.2 * c.sit + c.hop) * k;
       const y = bottom - bh / 2;
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.beginPath();
-      ctx.moveTo(x - 0.1 * k, bottom - 0.02 * k);
-      ctx.lineTo(x, bottom + 0.14 * k);
-      ctx.lineTo(x + 0.1 * k, bottom - 0.02 * k);
+      const tx = c.x;
+      ctx.moveTo(tx - 0.1 * k, bottom - 0.02 * k);
+      ctx.lineTo(tx, bottom + 0.14 * k);
+      ctx.lineTo(tx + 0.1 * k, bottom - 0.02 * k);
       ctx.closePath();
       ctx.fillStyle = '#ffffff';
       ctx.fill();

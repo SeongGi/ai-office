@@ -199,21 +199,20 @@ export function reception(ctx: Ctx, x: number, y: number, w: number) {
 /** Kitchen interview corner, kitchen-local metres: the table and where each cat sits. Needs a kitchen at least this wide. */
 export const INTERVIEW_MIN_W = 7.0;
 export const INTERVIEW = {
-  table: { x: 2.55, z: 2.6 },
-  boss: { x: 2.55, z: 1.95 },
-  candidate: { x: 2.55, z: 3.4 },
-  waiting: [{ x: 0.9, z: 3.45 }],
+  table: { x: 2.1, z: 3.35 },
+  boss: { x: 3.0, z: 3.5 },
+  candidate: { x: 1.2, z: 3.5 },
+  waiting: [{ x: -1.5, z: 3.5 }],
 };
 
-/** A small table with a stool for the interviewer, one for the candidate across it, and one for the candidate who waits. */
+/** A small table with the interviewer and the candidate on stools either side of it, and a stool across the lane for the candidate who waits. */
 export function interviewSet(ctx: Ctx) {
   const t = INTERVIEW;
   for (const [i, s] of [t.boss, t.candidate, ...t.waiting].entries()) circle(ctx, s.x, s.z + 0.08, 0.2, P.chairs[(i + 1) % P.chairs.length]);
-  rbox(ctx, t.table.x, t.table.z, 2.0, 0.66, P.wood, 0.16);
-  rbox(ctx, t.table.x, t.table.z, 1.86, 0.54, lighten(P.wood, 0.3), 0.12, { shadow: false, lw: 0.02 });
-  // papers on the table, out at the sides where the cats do not cover them
-  rbox(ctx, t.table.x - 0.72, t.table.z + 0.02, 0.26, 0.34, '#ffffff', 0.03, { shadow: false, lw: 0.02 });
-  rbox(ctx, t.table.x + 0.7, t.table.z - 0.02, 0.22, 0.3, '#fff7e0', 0.03, { shadow: false, lw: 0.02 });
+  rbox(ctx, t.table.x, t.table.z, 0.85, 0.6, P.wood, 0.16);
+  rbox(ctx, t.table.x, t.table.z, 0.73, 0.48, lighten(P.wood, 0.3), 0.12, { shadow: false, lw: 0.02 });
+  rbox(ctx, t.table.x - 0.15, t.table.z + 0.02, 0.22, 0.3, '#ffffff', 0.03, { shadow: false, lw: 0.02 });
+  rbox(ctx, t.table.x + 0.18, t.table.z - 0.02, 0.2, 0.26, '#fff7e0', 0.03, { shadow: false, lw: 0.02 });
 }
 
 export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string) {

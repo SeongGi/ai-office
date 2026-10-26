@@ -18,7 +18,6 @@ import { BreakLife } from './activities';
 import { Agent2D, type P, type SeatW } from './agent2d';
 import { BASE_PX, Camera2D, MIN_ZOOM } from './camera';
 import { drawCat, HEAD_TOP } from './cat';
-import { INTERVIEW_MIN_W } from './furniture';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle } from './draw';
@@ -374,8 +373,7 @@ export class World2D implements FloorWorld {
               { x: 0.3, z: 0.45, look: -0.6 },
               { x: -0.3, z: -1.45, look: 0 },
               { x: -w / 2 + 1.5, z: 1.3, look: 1 },
-              // The east corner is the interview set when the kitchen is wide enough.
-              ...(w >= INTERVIEW_MIN_W ? [] : [{ x: w / 2 - 1.5, z: 1.3, look: -1 }]),
+              { x: w / 2 - 1.5, z: 1.3, look: -1 },
             ];
       const map = this.slots[kind];
       const slot = this.takeSlot(map, id, spots.length - 1);
