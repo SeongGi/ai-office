@@ -138,7 +138,7 @@ curl -I http://127.0.0.1:8099/stream    # 404 (실제 서버의 길은 없다)
 ```
 
 - 호스트 포트는 8099다(8098은 다른 앱이 쓴다). 바꾸려면 `.env`에 `AGENT_FLOOR_DEMO_PORT`를 적는다.
-- DNS에 하위 도메인(예: `demo.example.com`)을 더하고, NPMplus에서 그 도메인 전체를 `http://<서버기기 IP>:8099`로 보낸다. SSL 인증서도 그 화면에서 발급한다. 로그인이나 웹소켓 설정은 필요 없다.
+- DNS에 하위 도메인 `office.example.com`을 더하고, NPMplus에서 그 도메인 전체를 `http://<서버기기 IP>:8099`로 보낸다. SSL 인증서도 그 화면에서 발급한다. 로그인이나 웹소켓 설정은 필요 없다.
 - 화면을 고친 뒤에는 `docker compose up -d --build demo`로 데모를 다시 빌드한다.
 - 내리기: `docker compose stop demo` 후 NPMplus에서 그 호스트를 끈다.
 
