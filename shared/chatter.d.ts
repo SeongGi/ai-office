@@ -1,6 +1,6 @@
 import type { Agent } from './protocol';
 
-export type TopicKind = 'error' | 'waiting' | 'busy' | 'done' | 'task' | 'none';
+export type TopicKind = 'error' | 'waiting' | 'busy' | 'asked' | 'done' | 'task' | 'none';
 export interface Topic { kind: TopicKind; text: string }
 export interface ChatLineText { from: string; to: string; text: string }
 export interface ChatOpts {
