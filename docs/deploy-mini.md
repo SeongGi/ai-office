@@ -127,6 +127,21 @@ launchd로 상시 실행하는 예(`~/Library/LaunchAgents/kr.seonggi.agent-floo
 docker compose exec app tail -n 20 /data/audit.log
 ```
 
+## 5-1. 외부 공개용 데모 (로그인 없음)
+
+밖의 사람에게 보여 줄 데모는 별도 컨테이너 `demo`가 맡는다. pages 빌드(`npm run build:pages`)를 nginx로 내주는 정적 페이지이며, 가짜 에이전트가 브라우저 안에서만 돈다. 실제 오피스 서버, 토큰, 로그인 프록시와는 연결되지 않는다.
+
+```bash
+docker compose up -d --build demo
+curl -I http://127.0.0.1:8099/          # 200
+curl -I http://127.0.0.1:8099/stream    # 404 (실제 서버의 길은 없다)
+```
+
+- 호스트 포트는 8099다(8098은 다른 앱이 쓴다). 바꾸려면 `.env`에 `AGENT_FLOOR_DEMO_PORT`를 적는다.
+- DNS에 하위 도메인(예: `demo.example.com`)을 더하고, NPMplus에서 그 도메인 전체를 `http://<서버기기 IP>:8099`로 보낸다. SSL 인증서도 그 화면에서 발급한다. 로그인이나 웹소켓 설정은 필요 없다.
+- 화면을 고친 뒤에는 `docker compose up -d --build demo`로 데모를 다시 빌드한다.
+- 내리기: `docker compose stop demo` 후 NPMplus에서 그 호스트를 끈다.
+
 ## 6. 참고와 주의
 
 - 서버기기의 다른 앱이 쓰는 oauth2-proxy는 v7.10.0이다. 이 버전은 CVE-2025-54576에 해당한다(`skip_auth_routes`를 쓸 때만 문제가 된다). 이 앱은 `skip_auth_routes`를 쓰지 않고 기계용 포트를 따로 둔 것이 그 때문이다. 참고만 한다.

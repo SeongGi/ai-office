@@ -1,0 +1,15 @@
+# 외부 공개용 데모 이미지. 서버 없이 브라우저 안에서 가짜 에이전트가 돈다(pages 빌드).
+# 실제 오피스 서버, 토큰, 로그인 프록시와는 아무것도 나누지 않는다.
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
+COPY . .
+RUN npm run build:pages
+
+FROM nginx:1.27-alpine
+COPY deploy/demo-nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist-pages /usr/share/nginx/html
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1

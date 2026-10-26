@@ -59,5 +59,15 @@ services:
     volumes:
       - ./allowed-emails.txt:/etc/oauth2-proxy/allowed-emails.txt:ro
 
+  # 외부 공개용 데모(로그인 없음). 브라우저 안에서만 도는 정적 페이지라 app, auth와 연결되지 않는다.
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+    image: agent-floor-demo:latest
+    restart: unless-stopped
+    ports:
+      - "${AGENT_FLOOR_DEMO_PORT:-8099}:80"
+
 volumes:
   audit:
