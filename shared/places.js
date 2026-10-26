@@ -154,6 +154,15 @@ export function thinkingText(activity) {
   return chars.length > 16 ? chars.slice(0, 16).join('') + '…' : t;
 }
 
+/** Break a thinking text over two lines for a bubble: at a space near the middle, else after 9 characters. */
+export function bubbleLines(text) {
+  const c = [...String(text ?? '')];
+  if (c.length <= 9) return [c.join(''), ''];
+  let cut = c.lastIndexOf(' ', 11);
+  if (cut < 3) cut = 9;
+  return [c.slice(0, cut).join('').trim(), c.slice(cut).join('').trim()];
+}
+
 /**
  * Priority: offline (desk) > covering meeting > helper meeting > tool room > lounge > desk.
  * `idleSinceMs` is when the agent's status became idle (null when it is not idle).

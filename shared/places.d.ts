@@ -35,3 +35,4 @@ export function isToolFailure(agent: Agent): boolean;
 export function effectiveStatus(agent: Agent, nowMs: number): Agent['status'];
 export function failureTool(agent: Agent): string;
 export function thinkingText(activity: string | undefined | null): string;
+export function bubbleLines(text: string): [string, string];

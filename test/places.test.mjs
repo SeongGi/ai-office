@@ -85,6 +85,7 @@ test('idleAgeMs is 0 for a busy agent', () => {
 // ---------------------------------------------------------------- tool rooms
 
 import {
+  bubbleLines,
   createToolState,
   effectiveStatus,
   failureTool,
@@ -252,4 +253,10 @@ test('thinkingText: 16 characters with an ellipsis, 생각 중 when empty', () =
   assert.equal(thinkingText('짧은 말'), '짧은 말');
   assert.equal(thinkingText('가'.repeat(16)), '가'.repeat(16));
   assert.equal(thinkingText('가'.repeat(17)), '가'.repeat(16) + '…');
+});
+
+test('bubbleLines: short text stays on one line, long text breaks at a space or after 9 characters', () => {
+  assert.deepEqual(bubbleLines('생각 중'), ['생각 중', '']);
+  assert.deepEqual(bubbleLines('코드 구조를 살펴보는 중입니다…'), ['코드 구조를 살펴보는', '중입니다…']);
+  assert.deepEqual(bubbleLines('가'.repeat(16) + '…'), ['가'.repeat(9), '가'.repeat(7) + '…']);
 });

@@ -1,6 +1,7 @@
 // The 2D "round cartoon" office. Canvas2D only. Same public surface as the 3D World.
 import type { Agent, Effect, WorldState } from '../../shared/protocol';
 import {
+  bubbleLines,
   createToolState,
   desiredPlace,
   effectiveStatus,
@@ -1018,15 +1019,7 @@ export class World2D implements FloorWorld {
       const pulse = fail || this.reduced ? 1 : 0.78 + 0.22 * Math.sin(t * 1.7 + a.seed * 6);
       const vis = Math.min(1, a.bubble);
       // Up to two lines: the thinking text breaks after 9 characters, a failure shows the message and the tool.
-      let l1 = a.bubbleText;
-      let l2 = a.bubbleSub;
-      if (!fail && [...l1].length > 9) {
-        const c = [...l1];
-        let cut = c.lastIndexOf(' ', 11);
-        if (cut < 3) cut = 9;
-        l1 = c.slice(0, cut).join('').trim();
-        l2 = c.slice(cut).join('').trim();
-      }
+      const [l1, l2] = fail ? [a.bubbleText, a.bubbleSub] : bubbleLines(a.bubbleText);
       const sz = 0.24 * k;
       const w1 = this.bubbleWidth(ctx, l1) * sz;
       const w2 = l2 ? this.bubbleWidth(ctx, l2) * sz * (fail ? 0.85 : 1) : 0;
