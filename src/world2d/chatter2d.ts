@@ -1,7 +1,7 @@
 // 실제 오피스에서 고양이들이 나누는 지어낸 대화의 짝과 시각을 고른다. 대사는 shared/chatter가 만든다.
 // 화면에만 띄우고 서버나 직원 기록에는 남기지 않는다.
 import type { WorldState } from '../../shared/protocol';
-import { makeChat } from '../../shared/chatter';
+import { makeChat, topicOf } from '../../shared/chatter';
 import type { Agent2D } from './agent2d';
 
 export interface ChatLine {
@@ -24,7 +24,8 @@ interface Pending {
   at: number;
   a: string;
   b: string;
-  place: Agent2D['place'];
+  /** 대화를 시작할 때 a와 b가 있던 장소. 둘째 줄 전에 달라지면 대화를 버린다. */
+  places: [Agent2D['place'], Agent2D['place']];
   line: ChatLine;
 }
 
@@ -35,12 +36,16 @@ const MAX_ACTIVE = 2;
 const FIRST_SEEN: [number, number] = [4, 10];
 const DESK_EVERY: [number, number] = [30, 50];
 const BREAK_EVERY: [number, number] = [18, 30];
+const FORGET_GROUP_AFTER = 120;
 const BREAK_ROOMS = new Set(['kitchen', 'games', 'lounge']);
 
 export class Chatter2D {
   private nextAt = new Map<string, number>();
   private quietUntil = new Map<string, number>();
   private spoke = new Map<string, number>();
+  private lastSeen = new Map<string, number>();
+  /** 짝(두 id를 정렬한 키)별로 지난번 대화의 이야깃거리. 같은 대화가 되풀이되지 않게 한다. */
+  private lastTopics = new Map<string, string>();
   private pending: Pending[] = [];
   private checkAt = 0;
 
@@ -57,9 +62,8 @@ export class Chatter2D {
     this.checkAt = t + 1;
 
     const groups = this.groups(t, state, agents);
-    const seen = new Set<string>();
     for (const g of groups) {
-      seen.add(g.key);
+      this.lastSeen.set(g.key, t);
       if (!this.nextAt.has(g.key)) {
         this.nextAt.set(g.key, t + this.between(FIRST_SEEN));
         continue;
@@ -72,9 +76,14 @@ export class Chatter2D {
         continue;
       }
       this.nextAt.set(g.key, t + this.between(g.where === 'desk' ? DESK_EVERY : BREAK_EVERY));
-      this.start(g, t, state, emit);
+      // 지난번과 같은 이야기라면 이 무리의 다음 시각을 한 번 더 미룬다.
+      if (!this.start(g, t, state, emit)) this.nextAt.set(g.key, this.nextAt.get(g.key)! + this.between(g.where === 'desk' ? DESK_EVERY : BREAK_EVERY));
     }
-    for (const key of [...this.nextAt.keys()]) if (!seen.has(key)) this.nextAt.delete(key);
+    for (const [key, at] of this.lastSeen) {
+      if (t - at <= FORGET_GROUP_AFTER) continue;
+      this.lastSeen.delete(key);
+      this.nextAt.delete(key);
+    }
   }
 
   /** 실제 message가 오가면 부른다. 보낸 팀과 받는 팀의 책상 대화를 잠시 쉬고, 두 고양이를 방금 말한 것으로 친다. */
@@ -82,6 +91,8 @@ export class Chatter2D {
     for (const team of teams) this.quietUntil.set(team, t + REAL_QUIET);
     this.spoke.set(fromId, t);
     this.spoke.set(toId, t);
+    // 실제 말풍선을 지어낸 둘째 줄이 덮어쓰지 않게 한다.
+    this.pending = this.pending.filter((p) => p.a !== fromId && p.b !== fromId && p.a !== toId && p.b !== toId);
   }
 
   /** 떠난 고양이를 잊는다. 진행 중인 대화에 끼어 있으면 그 대화를 버린다. */
@@ -92,6 +103,8 @@ export class Chatter2D {
 
   clear() {
     this.nextAt.clear();
+    this.lastSeen.clear();
+    this.lastTopics.clear();
     this.quietUntil.clear();
     this.spoke.clear();
     this.pending = [];
@@ -115,9 +128,10 @@ export class Chatter2D {
       let where: 'desk' | 'break';
       let team: string | null = null;
       if (cat.place === 'desk' || (cat.place === 'meeting' && !state.meeting)) {
+        // 회의실의 리드와 책상의 서브에이전트도 같은 팀이면 한 무리다.
         where = 'desk';
         team = cat.team;
-        key = `desk:${cat.team}:${cat.place}`;
+        key = `desk:${cat.team}`;
       } else if (BREAK_ROOMS.has(cat.place)) {
         where = 'break';
         key = `break:${cat.place}`;
@@ -129,7 +143,8 @@ export class Chatter2D {
     return [...map.values()].filter((g) => g.cats.length >= 2);
   }
 
-  private start(g: Group, t: number, state: WorldState, emit: (line: ChatLine) => void) {
+  /** 대화를 시작한다. 지난번과 같은 이야기라서 내보내지 않았으면 false. */
+  private start(g: Group, t: number, state: WorldState, emit: (line: ChatLine) => void): boolean {
     const i = Math.min(g.cats.length - 1, Math.floor(this.rnd() * g.cats.length));
     const rest = g.cats.filter((_, k) => k !== i);
     const a = g.cats[i];
@@ -140,12 +155,18 @@ export class Chatter2D {
       teamTaskB: state.teams[b.team]?.task,
       where: g.where,
     });
-    if (!chat) return;
+    if (!chat) return true;
+    const pair = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+    const [first, second] = a.id < b.id ? [a, b] : [b, a];
+    const topics = `${topicOf(state.agents[first.id], state.teams[first.team]?.task).text}|${topicOf(state.agents[second.id], state.teams[second.team]?.task).text}`;
+    if (this.lastTopics.get(pair) === topics) return false;
+    this.lastTopics.set(pair, topics);
     const plane = g.where === 'desk';
     emit({ ...chat[0], plane });
     this.spoke.set(a.id, t);
     this.spoke.set(b.id, t);
-    this.pending.push({ at: t + SECOND_LINE_DELAY, a: a.id, b: b.id, place: a.place, line: { ...chat[1], plane } });
+    this.pending.push({ at: t + SECOND_LINE_DELAY, a: a.id, b: b.id, places: [a.place, b.place], line: { ...chat[1], plane } });
+    return true;
   }
 
   /** 때가 된 둘째 줄을 내보낸다. 두 고양이가 그대로 있을 때만이고, 아니면 대화를 버린다. */
@@ -157,9 +178,12 @@ export class Chatter2D {
         keep.push(p);
         continue;
       }
-      const ok = [p.a, p.b].every((id) => {
+      const ok = [p.a, p.b].every((id, i) => {
         const cat = agents.get(id);
-        return cat && !cat.leaving && !cat.farewell && cat.place === p.place && state.agents[id]?.status !== 'offline';
+        const data = state.agents[id];
+        if (!cat || !data || data.status === 'offline' || cat.leaving || cat.farewell || cat.place !== p.places[i]) return false;
+        // 그 사이 회의가 열려 회의실로 가야 하는 고양이는 대화를 버린다.
+        return !(state.meeting && cat.place === 'meeting');
       });
       if (ok) emit(p.line);
     }

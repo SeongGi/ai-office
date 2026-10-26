@@ -493,6 +493,7 @@ export class World2D implements FloorWorld {
     const to = this.agents.get(l.to);
     if (!from || !to) return;
     from.say(2.4);
+    this.life.hush(l.from, this.elapsed + 5);
     this.cb.onMessage(l.from, l.to, l.text);
     if (l.plane) this.sendLetter(from, to);
   }

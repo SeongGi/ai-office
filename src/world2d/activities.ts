@@ -141,6 +141,12 @@ export class BreakLife {
     for (const [k, v] of this.busy) if (v === id) this.busy.delete(k);
   }
 
+  /** 지어낸 대화가 말풍선을 띄운 고양이는 until(초)까지 쉬는 방 감탄사를 미룬다. */
+  hush(id: string, until: number) {
+    const L = this.life.get(id);
+    if (L) L.emoteAt = Math.max(L.emoteAt, until);
+  }
+
   private drop(a: Agent2D) {
     const act = a.act;
     act.prop = 0;
