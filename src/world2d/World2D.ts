@@ -18,6 +18,7 @@ import { BreakLife } from './activities';
 import { Agent2D, type P, type SeatW } from './agent2d';
 import { BASE_PX, Camera2D, MIN_ZOOM } from './camera';
 import { drawCat, HEAD_TOP } from './cat';
+import { Chatter2D, type ChatLine } from './chatter2d';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle } from './draw';
@@ -93,6 +94,7 @@ export class World2D implements FloorWorld {
   private nextSpawnAt = 0;
   private slots = { meeting: new Map<string, number>(), lounge: new Map<string, number>(), games: new Map<string, number>(), kitchen: new Map<string, number>() };
   private life = new BreakLife();
+  private chatter = new Chatter2D();
   private npcs = new Npcs();
   private letters: Letter[] = [];
   private ripples: Ripple[] = [];
@@ -445,6 +447,7 @@ export class World2D implements FloorWorld {
     }
     this.agents.delete(id);
     this.life.forget(id);
+    this.chatter.forget(id);
     this.idleSince.delete(id);
     this.freeSlot(id);
     if (this.hovered === id) this.setHover(null);
@@ -457,6 +460,7 @@ export class World2D implements FloorWorld {
     this.letters = [];
     this.ripples = [];
     this.life.clear(this.agents);
+    this.chatter.clear();
     this.book = new SeatBook();
     this.instantNext = true;
     this.hasFramed = false;
@@ -471,10 +475,26 @@ export class World2D implements FloorWorld {
     if (!from || !to) return;
     from.say(2.4);
     this.cb.onMessage(effect.from, effect.to, effect.text);
+    this.chatter.noteRealMessage(effect.from, effect.to, [from.team, to.team], this.elapsed);
+    this.sendLetter(from, to);
+  }
+
+  /** 보낸 고양이 팀 색의 종이비행기를 날린다. 움직임 줄이기에서는 받는 쪽에 물결만 낸다. */
+  private sendLetter(from: Agent2D, to: Agent2D) {
     const team = this.state?.teams[from.team];
     const color = team ? PALETTES2D[this.theme].accent(team.hue) : '#ff7a59';
-    if (this.reduced) this.ripples.push({ id: effect.to, t: 0, color });
-    else this.letters.push({ from: effect.from, to: effect.to, t: 0, color });
+    if (this.reduced) this.ripples.push({ id: to.id, t: 0, color });
+    else this.letters.push({ from: from.id, to: to.id, t: 0, color });
+  }
+
+  /** 지어낸 대화 한 줄을 띄운다. 서버나 직원 기록에는 남기지 않는다. */
+  private showLine(l: ChatLine) {
+    const from = this.agents.get(l.from);
+    const to = this.agents.get(l.to);
+    if (!from || !to) return;
+    from.say(2.4);
+    this.cb.onMessage(l.from, l.to, l.text);
+    if (l.plane) this.sendLetter(from, to);
   }
 
   // ---------------------------------------------------------------- selection and camera
@@ -720,6 +740,7 @@ export class World2D implements FloorWorld {
       }
     }
     if (!this.reduced) this.life.update(dt, this.elapsed, this.agents, this.slots);
+    if (this.state) this.chatter.update(this.elapsed, this.state, this.agents, (l) => this.showLine(l));
     this.npcs.update(this.elapsed, this.elevOpen, this.reduced);
     this.elevOpen = damp(this.elevOpen, near ? 1 : 0, 5, dt);
     for (const l of this.letters) l.t += dt / 1.1;
