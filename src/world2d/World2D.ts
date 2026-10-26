@@ -42,6 +42,32 @@ interface Ripple {
 
 const MEETING_CHAIRS = 8;
 
+/** Where every office and shared room stands. Changes when the building is reshaped. */
+function shapeKey(plan: BuildingLayout) {
+  const rooms = [...plan.rooms.values()].map((r) => `${r.team.id}:${r.x.toFixed(2)}:${r.w.toFixed(2)}:${r.doorX.toFixed(2)}`);
+  const am = plan.amenities.map((a) => `${a.kind}:${a.side}:${a.rect.x.toFixed(2)}:${a.rect.w.toFixed(2)}`);
+  return `${rooms.join('|')}#${am.join('|')}`;
+}
+
+/** How far the office or shared room around `p` moved east between two plans (0 in the lobby). */
+function shiftOf(prev: BuildingLayout, next: BuildingLayout, p: P) {
+  const side = p.z < 0 ? 'north' : 'south';
+  for (const r of prev.rooms.values()) {
+    if (r.side !== side || Math.abs(p.x - r.x) > r.w / 2) continue;
+    const n = next.rooms.get(r.team.id);
+    if (!n) return 0;
+    // The door itself can slide along the wall when the office grows.
+    const door = (q: RoomLayout) => q.x + (q.side === 'north' ? q.doorX : -q.doorX);
+    return Math.abs(p.x - door(r)) < 0.05 ? door(n) - door(r) : n.x - r.x;
+  }
+  for (const a of prev.amenities) {
+    if (a.side !== side || Math.abs(p.x - a.rect.x) > a.rect.w / 2) continue;
+    const n = next.amenities.find((b) => b.kind === a.kind && b.side === side);
+    return n ? n.rect.x - a.rect.x : 0;
+  }
+  return 0;
+}
+
 export class World2D implements FloorWorld {
   readonly perf: WorldPerf = { frameMs: 0, fps: 0, syncMs: 0, worstSyncMs: 0, calls: 0, triangles: 0, agents: 0 };
   onFrame?: () => void;
@@ -123,8 +149,11 @@ export class World2D implements FloorWorld {
     this.state = state;
     const instant = this.instantNext;
     this.instantNext = false;
+    const prev = this.plan;
     const plan = (this.plan = computeLayout(state, this.book));
     this.life.setPlan(plan);
+    const reshaped = prev !== null && shapeKey(prev) !== shapeKey(plan);
+    if (reshaped) for (const s of this.agents.values()) s.relocate((p) => shiftOf(prev, plan, p));
 
     for (const agent of Object.values(state.agents)) {
       const room = plan.rooms.get(agent.team);
@@ -154,6 +183,7 @@ export class World2D implements FloorWorld {
       else if (!this.idleSince.has(agent.id)) this.idleSince.set(agent.id, performance.now());
       if (agent.status === 'offline' && !s.leaving) this.depart(agent.id);
     }
+    if (reshaped) this.rewalk();
     this.updatePlaces();
     for (const id of this.agents.keys()) if (!state.agents[id]) this.depart(id);
 
@@ -176,7 +206,29 @@ export class World2D implements FloorWorld {
     const s = Math.sin(room.yaw);
     const lx = -Math.sin(seat.yaw);
     const lz = -Math.cos(seat.yaw);
-    return { x: p.x, z: p.z, fx: lx * c + lz * s, fz: -lx * s + lz * c, path: seat.path.map((q) => this.w(room, q)) };
+    return {
+      x: p.x,
+      z: p.z,
+      fx: lx * c + lz * s,
+      fz: -lx * s + lz * c,
+      path: seat.path.map((q) => this.w(room, q)),
+      door: this.w(room, room.entry[room.entry.length - 1]),
+    };
+  }
+
+  /** Cats under way when the building was reshaped take their routes again, through the doors where they are now. */
+  private rewalk() {
+    for (const [id, s] of this.agents) {
+      if (s.mode === 'gone' || s.mode === 'seated') continue;
+      if (s.mode !== 'leaving' && s.isAway()) {
+        this.freeSlot(id);
+        const trip = s.place === 'farewell' ? this.farewellSpot(s.team, id) : s.place === 'desk' ? null : this.tripTo(s.team, s.place, id);
+        if (trip) s.goTo(trip.route, trip.look, trip.sit);
+        else s.returnToSeat();
+        continue;
+      }
+      s.rewalk(this.exitFor(s.team));
+    }
   }
 
   // ---------------------------------------------------------------- places
@@ -224,7 +276,7 @@ export class World2D implements FloorWorld {
     const sx = ELEVATOR.x + side * (1.5 + 0.8 * col);
     const sz = row < 2 ? -0.55 : 0.55;
     const door = this.w(room, room.entry[room.entry.length - 1]);
-    return { route: [door, { x: sx, z: 0 }, { x: sx, z: sz }] as P[], look: -side };
+    return { route: [door, { x: sx, z: 0 }, { x: sx, z: sz }] as P[], look: -side, sit: false };
   }
 
   private freeSlot(id: string) {
@@ -306,7 +358,12 @@ export class World2D implements FloorWorld {
       const map = this.slots[kind];
       const slot = this.takeSlot(map, id, spots.length - 1);
       const spot = spots[Math.min(slot, spots.length - 1)];
-      return { route: [door, lane, aw(spot.x, front), aw(spot.x, spot.z)], look: spot.look, sit: false };
+      // In down the middle, along the aisle in front of the island (or the table), and round its end to the spots behind it.
+      const aisle = kind === 'kitchen' ? 1.0 : 1.2;
+      const behind = kind === 'kitchen' ? spot.z < -1.0 : table && spot.z < -1.1;
+      const x = !behind ? spot.x : kind === 'kitchen' ? -1.9 : Math.sign(spot.x) * 1.7;
+      const route = [door, lane, aw(0, front), aw(0, aisle), aw(x, aisle), aw(x, spot.z), aw(spot.x, spot.z)];
+      return { route, look: spot.look, sit: false };
     }
     // lounge: sofa, armchairs and beanbags first (sit), then standing spots
     const spots: { x: number; z: number; sit: boolean }[] = [
@@ -325,7 +382,15 @@ export class World2D implements FloorWorld {
     ];
     const slot = this.takeSlot(this.slots.lounge, id, spots.length - 1);
     const spot = spots[Math.min(slot, spots.length - 1)];
-    return { route: [door, lane, aw(spot.x, front), aw(spot.x, spot.z)], look: 0, sit: spot.sit };
+    // In west of the TV to the aisle between the TV and the coffee table; the sofa is reached round the table.
+    const aisle = 0.6;
+    const route = [door, lane, aw(-1.4, front), aw(-1.4, aisle)];
+    if (spot.z < -1.0) {
+      const x = spot.x <= 0.2 ? -1.2 : 1.3;
+      route.push(aw(x, aisle), aw(x, -1.3), aw(spot.x, -1.3));
+    } else route.push(aw(spot.x, aisle));
+    route.push(aw(spot.x, spot.z));
+    return { route, look: 0, sit: spot.sit };
   }
 
   // ---------------------------------------------------------------- arrivals and departures
@@ -341,10 +406,13 @@ export class World2D implements FloorWorld {
       this.updatePlaces();
     }
     if (this.reduced) return this.dropAgent(id);
-    const room = this.plan?.rooms.get(s.team);
+    s.leave(this.exitFor(s.team), () => this.dropAgent(id));
+  }
+
+  private exitFor(team: string): P[] {
+    const room = this.plan?.rooms.get(team);
     const inside: P = SPAWN;
-    const exit: P[] = room ? [...room.exit.map((p) => this.w(room, p)), inside] : [{ x: ELEVATOR.x, z: ELEVATOR.z + 1.3 }, { x: ELEVATOR.x, z: ELEVATOR.z + 1.3 }, { x: ELEVATOR.x, z: ELEVATOR.z + 0.6 }, inside];
-    s.leave(exit, () => this.dropAgent(id));
+    return room ? [...room.exit.map((p) => this.w(room, p)), inside] : [{ x: ELEVATOR.x, z: ELEVATOR.z + 1.3 }, { x: ELEVATOR.x, z: ELEVATOR.z + 1.3 }, { x: ELEVATOR.x, z: ELEVATOR.z + 0.6 }, inside];
   }
 
   private dropAgent(id: string) {

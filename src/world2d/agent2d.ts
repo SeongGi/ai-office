@@ -1,5 +1,6 @@
 // One agent: where the cat is, what it is doing, and how it moves. Mirrors src/world/Character.ts.
 import type { Agent, Status } from '../../shared/protocol';
+import { CORRIDOR } from '../world/layout';
 import { damp } from '../world/motion';
 import type { CatAct, CatView } from './cat';
 import { EYE_IRIS, catFurFor, hash, shirtFor } from './palette2d';
@@ -17,11 +18,23 @@ export interface SeatW {
   fz: number;
   /** World path from the office door to the seat. Last point is the seat. */
   path: P[];
+  /** Corridor point just outside the office door. */
+  door: P;
 }
 
 export type Mode = 'walking' | 'seated' | 'standing' | 'leaving' | 'gone';
 
 const WALK_SPEED = 2.0;
+const HALL = CORRIDOR / 2 - 0.1;
+
+/** In the corridor, where nothing stands between two points. */
+const inHall = (p: P) => Math.abs(p.z) <= HALL;
+const same = (a: P, b: P) => Math.hypot(a.x - b.x, a.z - b.z) < 0.05;
+
+/** Any straight line inside the corridor is clear, so a run of corridor points keeps its ends and its centre-line points. */
+function tidy(path: P[]): P[] {
+  return path.filter((p, i) => !(i > 0 && i < path.length - 1 && inHall(path[i - 1]) && inHall(p) && inHall(path[i + 1]) && Math.abs(p.z) > 0.5));
+}
 
 export class Agent2D implements CatView {
   readonly id: string;
@@ -63,6 +76,8 @@ export class Agent2D implements CatView {
   readonly seed: number;
 
   private path: P[] = [];
+  /** Waypoints walked since the cat last stood in the corridor (the first one is that point). Walked backwards they lead out through the same doors. */
+  private trail: P[] = [];
   /** Seconds to stay in the elevator before stepping out. */
   private wait = 0;
   private speed = WALK_SPEED;
@@ -101,6 +116,7 @@ export class Agent2D implements CatView {
       this.z = seat.z;
       this.look = seat.fx * 0.6;
     }
+    if (this.mode === 'seated' && !this.awayRoute) this.trail = [seat.door, ...seat.path];
   }
 
   /** Spawn at the first point and walk the whole way to the seat. */
@@ -110,6 +126,7 @@ export class Agent2D implements CatView {
     const [start, ...rest] = entry;
     this.x = start.x;
     this.z = start.z;
+    this.trail = [start];
     this.mode = 'walking';
     this.endMode = 'seated';
     this.sit = 0;
@@ -125,28 +142,26 @@ export class Agent2D implements CatView {
   /** Walk to a purpose room and stand (or sit, for lounge seats). `route` starts just outside the office door. */
   goTo(route: P[], look: number, sitDown: boolean) {
     if (this.mode === 'leaving' || this.mode === 'gone' || !route.length) return;
-    const old = this.awayRoute;
-    const first: P[] =
-      this.mode === 'seated' && this.seat ? [...this.seat.path].reverse().slice(1) : old && old.length > 1 ? [old[old.length - 2]] : [];
+    const out = this.toHall();
     this.routeId++;
     this.awayRoute = route;
     this.awayLook = look;
     this.awaySit = sitDown;
     this.endMode = 'standing';
     this.mode = 'walking';
-    this.path = [...first, ...route];
+    this.path = tidy([...out, ...route]);
     this.speed = this.paceFor(this.path);
   }
 
   returnToSeat() {
     if (!this.awayRoute || !this.seat || this.mode === 'leaving' || this.mode === 'gone') return;
     this.routeId++;
-    const back = [...this.awayRoute].reverse();
+    const out = this.toHall();
     this.awayRoute = null;
     this.awaySit = false;
     this.endMode = 'seated';
     this.mode = 'walking';
-    this.path = [...back, ...this.seat.path];
+    this.path = tidy([...out, this.seat.door, ...this.seat.path]);
     this.speed = this.paceFor(this.path);
   }
 
@@ -177,6 +192,82 @@ export class Agent2D implements CatView {
   }
 
   private paceFor(path: P[]) {
+    return Math.min(4.2, Math.max(WALK_SPEED, this.lengthOf(path) / 9));
+  }
+
+  /** Stand up and walk out along `exit` (office door, corridor, elevator). */
+  leave(exit: P[], onGone: () => void) {
+    if (this.mode === 'leaving' || this.mode === 'gone') return;
+    const out = this.wayOut(exit);
+    this.mode = 'leaving';
+    this.routeId++;
+    this.onGone = onGone;
+    this.awaySit = false;
+    this.awayRoute = null;
+    this.path = out;
+    this.speed = this.paceFor(this.path);
+  }
+
+  private wayOut(exit: P[]) {
+    // Still on the way out of the elevator: turn round and go back in.
+    const back = [...this.trail].reverse();
+    if (back.length > 0 && !inHall(back[back.length - 1])) return back;
+    return tidy([...this.toHall(), ...exit]);
+  }
+
+  /**
+   * The building was reshaped: carry the cat and its walked and planned waypoints along with the room each one
+   * is in. `dx` gives that shift for a point off the corridor's centre line; a centre-line point moves with its
+   * neighbour off the line.
+   */
+  relocate(dx: (p: P) => number) {
+    const move = (pts: P[]) => {
+      const d = pts.map((p) => (Math.abs(p.z) > 0.5 ? dx(p) : null));
+      for (let i = 0; i < pts.length; i++) {
+        const k = d[i] ?? d[i + 1] ?? d[i - 1] ?? 0;
+        if (k) pts[i] = { x: pts[i].x + k, z: pts[i].z };
+      }
+    };
+    if (Math.abs(this.z) > 0.5) this.x += dx(this);
+    move(this.path);
+    move(this.trail);
+    if (this.awayRoute) {
+      this.awayRoute = [...this.awayRoute];
+      move(this.awayRoute);
+    }
+  }
+
+  /** After a reshape: walk on to the seat, or out to the elevator, along the new doors. */
+  rewalk(exit: P[]) {
+    if (this.mode === 'leaving') this.path = this.wayOut(exit);
+    else if (this.mode === 'walking' && !this.awayRoute && this.seat) this.path = tidy([...this.toHall(), this.seat.door, ...this.seat.path]);
+    else return;
+    this.speed = this.paceFor(this.path);
+  }
+
+  /**
+   * The way from here to the nearest corridor point: on along the planned waypoints, or back along the walked
+   * ones, whichever is shorter. Either way the cat only passes doors it would pass anyway.
+   */
+  private toHall(): P[] {
+    const ahead: P[] = [];
+    let aheadOk = false;
+    if (this.mode === 'walking' || this.mode === 'leaving') {
+      for (const p of this.path) {
+        ahead.push(p);
+        if (inHall(p)) {
+          aheadOk = true;
+          break;
+        }
+      }
+    }
+    const back = [...this.trail].reverse();
+    const backOk = back.length > 0 && inHall(back[back.length - 1]);
+    if (aheadOk && (!backOk || this.lengthOf(ahead) <= this.lengthOf(back))) return ahead;
+    return back;
+  }
+
+  private lengthOf(path: P[]) {
     let len = 0;
     let px = this.x;
     let pz = this.z;
@@ -185,30 +276,26 @@ export class Agent2D implements CatView {
       px = p.x;
       pz = p.z;
     }
-    return Math.min(4.2, Math.max(WALK_SPEED, len / 9));
+    return len;
   }
 
-  /** Stand up and walk out along `exit` (office door, corridor, elevator). */
-  leave(exit: P[], onGone: () => void) {
-    if (this.mode === 'leaving' || this.mode === 'gone') return;
-    const outbound = this.mode === 'walking' && this.endMode === 'standing';
-    this.mode = 'leaving';
-    this.routeId++;
-    this.onGone = onGone;
-    this.awaySit = false;
-    if (this.awayRoute) {
-      const route = this.awayRoute;
-      const corridor = route.length > 1 ? route[route.length - 2] : route[0];
-      const at = outbound ? this.path.indexOf(corridor) : -1;
-      const keep = outbound ? (at >= 0 ? this.path.slice(0, at + 1) : []) : [corridor];
-      this.awayRoute = null;
-      this.path = [...keep, ...exit.slice(2)];
-      this.speed = this.paceFor(this.path);
-      return;
-    }
-    const back = this.seat ? [...this.seat.path].reverse().slice(1) : [];
-    this.path = [...back, ...exit];
-    this.speed = this.paceFor(this.path);
+  /** The walked waypoints a cat resting at its seat or its spot came by. */
+  private restTrail(): P[] {
+    if (this.mode === 'seated' && this.seat) return [this.seat.door, ...this.seat.path];
+    const route = this.awayRoute;
+    if (this.mode !== 'standing' || !route) return [];
+    let i = route.length - 1;
+    while (i > 0 && !inHall(route[i])) i--;
+    return route.slice(i);
+  }
+
+  /** A waypoint was reached: grow the trail, shrink it when walking back over it, restart it in the corridor. */
+  private passed(p: P) {
+    const tr = this.trail;
+    if (inHall(p)) this.trail = [p];
+    else if (tr.length && same(tr[tr.length - 1], p)) return;
+    else if (tr.length > 1 && same(tr[tr.length - 2], p)) tr.pop();
+    else tr.push(p);
   }
 
   setStatus(status: Status) {
@@ -252,6 +339,7 @@ export class Agent2D implements CatView {
           this.x = target.x;
           this.z = target.z;
           this.path.shift();
+          this.passed(target);
         } else {
           this.x += (dx / dist) * step;
           this.z += (dz / dist) * step;
@@ -260,8 +348,12 @@ export class Agent2D implements CatView {
         }
       }
       if (!this.path.length) {
-        if (this.mode === 'walking') this.mode = this.endMode;
-        else {
+        if (this.mode === 'walking') {
+          this.mode = this.endMode;
+          // Home again (seat or spot): forget side trips, keep only the way in.
+          const rest = this.restTrail();
+          if (rest.length && same(rest[rest.length - 1], this)) this.trail = rest;
+        } else {
           this.mode = 'gone';
           this.onGone?.();
           return;

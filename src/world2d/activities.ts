@@ -86,6 +86,20 @@ function rnd(seed: number, n: number) {
 }
 
 const sign = (v: number) => (v < 0 ? -1 : 1);
+
+/** Room-local way between two spots in the games room: round the end of the table, along the aisle in front of it. */
+function gamesWay(x0: number, z0: number, x1: number, z1: number): [number, number][] {
+  const aisle = 1.2;
+  const behind = (z: number) => z < -1.1;
+  const out: [number, number][] = [];
+  const a = behind(z0) ? sign(x0) * 1.7 : x0;
+  const b = behind(z1) ? sign(x1) * 1.7 : x1;
+  if (a !== x0) out.push([a, z0]);
+  out.push([a, aisle], [b, aisle]);
+  if (b !== x1) out.push([b, z1]);
+  out.push([x1, z1]);
+  return out;
+}
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 export class BreakLife {
@@ -319,7 +333,10 @@ export class BreakLife {
     const stand = target === 'fridge' ? [room.w / 2 - 0.9, -2.7] : [-room.w / 2 + 1.0, -2.7];
     const via = target === 'fridge' ? stand[0] : -room.w / 2 + 1.55;
     const pts: [number, number][] = [];
-    if (lz < lane - 0.1) pts.push([lx, lane]);
+    // Behind the island: round its west end first.
+    const ax = lz < -1.0 ? -1.9 : lx;
+    if (ax !== lx) pts.push([ax, lz]);
+    if (lz < lane - 0.1) pts.push([ax, lane]);
     pts.push([via, lane], [via, stand[1]]);
     if (via !== stand[0]) pts.push([stand[0], stand[1]]);
     if (!this.trip(a, L, room, pts, target, false, 2.4 + this.r(a, L) * 1.2)) L.tripAt = t + 4;
@@ -334,7 +351,11 @@ export class BreakLife {
     const wasVending = L.target === 'vending';
     if (wasVending) pts.push([x + 0.6, z]);
     pts.push([wasVending ? -room.w / 2 + 1.55 : x, lane]);
-    if (hz < lane - 0.1) pts.push([hx, lane]);
+    if (hz < lane - 0.1) {
+      const ax = hz < -1.0 ? -1.9 : hx;
+      pts.push([ax, lane]);
+      if (ax !== hx) pts.push([ax, hz]);
+    }
     pts.push([hx, hz]);
     return pts.map(([px, pz]) => this.w(room, px, pz));
   }
@@ -358,12 +379,14 @@ export class BreakLife {
         if (this.busy.has('beanbag')) L.tripAt = t + 3;
         else {
           const bean: [number, number] = this.r(a, L) < 0.5 ? [-room.w / 2 + 1.0, OFFICE_D / 2 - 1.4] : [-room.w / 2 + 2.0, OFFICE_D / 2 - 1.1];
-          if (!this.trip(a, L, room, [bean], 'beanbag', true, 4 + this.r(a, L) * 3)) L.tripAt = t + 4;
+          const [lx, lz] = toLocal(room, [a.x, a.z]);
+          if (!this.trip(a, L, room, gamesWay(lx, lz, bean[0], bean[1]), 'beanbag', true, 4 + this.r(a, L) * 3)) L.tripAt = t + 4;
         }
       }
     } else this.driveTrip(a, L, t, () => {
+      const [x, z] = toLocal(room, [a.x, a.z]);
       const [hx, hz] = toLocal(room, [L.home.x, L.home.z]);
-      return [this.w(room, hx, hz)];
+      return gamesWay(x, z, hx, hz).map(([px, pz]) => this.w(room, px, pz));
     });
     if (L.trip !== 0) {
       ac.prop = 0;
