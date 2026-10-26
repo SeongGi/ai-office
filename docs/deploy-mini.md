@@ -1,6 +1,6 @@
 # 서버기기에 24시간 서버 두기 (ai-office.example.com)
 
-서버는 서버기기의 Docker(OrbStack)에서 돈다. 사람은 구글 로그인으로 `https://ai-office.example.com`에 들어온다. 기계(훅, seed, close-agent)는 구글 로그인을 못 하므로 같은 도메인의 정해진 세 길로만 들어온다.
+서버는 서버기기의 Docker(OrbStack)에서 돈다. 사람은 구글 로그인으로 `https://ai-office.example.com`에 들어온다. 기계(훅, seed, close-agent)는 구글 로그인을 못 하므로 같은 도메인의 정해진 세 길로만 접근한다.
 
 ```
 사람   브라우저 -> nginx(/) -> 서버기기:8097 (oauth2-proxy) -> app:4317 (메인 포트, 밖으로 안 나감)
