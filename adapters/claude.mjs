@@ -2,6 +2,7 @@
 // Receives the JSON object Claude Code writes to a hook's stdin.
 // https://docs.claude.com/en/docs/claude-code/hooks
 import { describeTool, deviceName, pretty, shortId, shortToolName, slugKey, teamFromCwd } from './common.mjs';
+import { TOOL_FAIL_PREFIX } from '../shared/places.js';
 import { clipText, readTranscriptTail, readTranscriptTitle, shortTitle } from './transcript.mjs';
 
 const SPAWN_TOOLS = new Set(['Task', 'Agent']);
@@ -100,6 +101,10 @@ export function fromClaude(input, opts = {}) {
       }
       return [{ type: 'status', ...actor, status: 'thinking', activity: `마쳤어요: ${describeTool(tool, toolInput)}` }];
     }
+
+    case 'PostToolUseFailure':
+      // 도구가 실패했다. 다음 도구 훅이나 멈춤 훅이 오면 지워지고, 안 와도 화면이 4초 뒤 생각 중으로 돌린다(effectiveStatus).
+      return [{ type: 'status', ...actor, status: 'error', activity: `${TOOL_FAIL_PREFIX}: ${shortToolName(tool) || '도구'}` }];
 
     case 'Notification':
       return [{ type: 'status', ...base, status: 'waiting', activity: input.message || '답을 기다려요' }];

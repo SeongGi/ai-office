@@ -45,9 +45,9 @@ export class Agent2D implements CatView {
   x = 0;
   z = 0;
   seat: SeatW | null = null;
-  place: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'farewell' = 'desk';
+  place: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'library' | 'server' | 'search' | 'farewell' = 'desk';
   /** What the cat holds and does while it hangs out (mug, paddle, stretch). Driven by activities.ts. */
-  readonly act: CatAct = { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0 };
+  readonly act: CatAct = { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0, work: 0 };
   /** Bumped whenever the cat is sent somewhere new, so a side trip knows it was overruled. */
   routeId = 0;
   main = true;
@@ -66,6 +66,16 @@ export class Agent2D implements CatView {
   hover = 0;
   selected = 0;
   badge = 0;
+  /** Speech bubble over the head: what it shows, how visible it is (0..1) and the text. Driven by World2D. */
+  bubbleKind: 0 | 1 | 2 = 0; // 0 none, 1 thinking cloud, 2 tool failure
+  bubble = 0;
+  bubbleText = '';
+  bubbleSub = '';
+  bubbleWant = 0;
+  /** The pose the cat takes at its spot in a tool room (CatAct.work), set when it is sent there. */
+  workPose: 0 | 1 | 2 | 3 = 0;
+  /** Which failure event the red bubble was started for (the agent's lastSeen). */
+  failKey = -1;
   talk = 0;
   alpha = 1;
   atDesk = true;
@@ -423,6 +433,9 @@ export class Agent2D implements CatView {
     this.talk = Math.max(0, this.talk - dt);
     const wantBadge = this.status === 'thinking' || this.status === 'waiting' || this.status === 'done' || this.status === 'error' ? 1 : 0;
     this.badge = damp(this.badge, wantBadge, reduced ? 30 : 12, dt);
+    this.act.work = this.mode === 'standing' && this.workPose && (this.place === 'library' || this.place === 'server' || this.place === 'search') ? this.workPose : 0;
+    this.bubble = damp(this.bubble, this.bubbleWant, reduced ? 30 : 6, dt);
+    if (this.bubble < 0.01 && this.bubbleWant === 0) this.bubbleKind = 0;
     this.selected = damp(this.selected, this.wantSelected ? 1 : 0, 12, dt);
     this.hover = damp(this.hover, this.wantHover ? 1 : 0, 14, dt);
     this.alpha = damp(this.alpha, this.status === 'offline' ? 0.55 : 1, 6, dt);

@@ -27,6 +27,8 @@ const KITCHEN_W = 7.5;
 const MEETING_W = 6.5;
 const LOUNGE_W = 9;
 const INTERVIEW_W = 5.6;
+/** 도구 방: 자료실, 서버실, 정보검색실. 항상 만든다. 렌더러는 방이 없거나 자리가 다 찼으면 고양이를 자리에 둔다. */
+export const TOOL_ROOM_W = { library: 5.0, server: 4.8, search: 4.8 } as const;
 export const LOBBY_WIDTH = LOBBY_W;
 export const BUILDING_X0 = -24;
 /** 로비 북쪽 벽에 붙은 엘리베이터 위치(월드). 문은 +Z(로비 안쪽)를 본다. */
@@ -73,7 +75,7 @@ export interface Rect {
   d: number;
 }
 
-export type AmenityKind = 'kitchen' | 'meeting' | 'lounge' | 'games' | 'booths' | 'interview';
+export type AmenityKind = 'kitchen' | 'meeting' | 'lounge' | 'games' | 'booths' | 'interview' | 'library' | 'server' | 'search';
 
 export interface Amenity {
   kind: AmenityKind;
@@ -263,8 +265,15 @@ export function computeLayout(state: WorldState, book: SeatBook): BuildingLayout
     { kind: 'interview', w: INTERVIEW_W, side: 'south' },
     { kind: 'lounge', w: LOUNGE_W, side: 'south' },
   ];
-  const lenN = wingLen.north + MEETING_W + KITCHEN_W;
-  const lenS = wingLen.south + INTERVIEW_W + LOUNGE_W;
+  let lenN = wingLen.north + MEETING_W + KITCHEN_W;
+  let lenS = wingLen.south + INTERVIEW_W + LOUNGE_W;
+  // 도구 방은 그때그때 더 짧은 쪽 날개 끝에 붙인다. 날개가 짧아지면 아래 채움 방(게임존, 부스)이 줄어든다.
+  for (const kind of ['library', 'server', 'search'] as const) {
+    const side = lenN <= lenS ? 'north' : 'south';
+    amenities.push({ kind, w: TOOL_ROOM_W[kind], side });
+    if (side === 'north') lenN += TOOL_ROOM_W[kind];
+    else lenS += TOOL_ROOM_W[kind];
+  }
   const wingLength = Math.max(lenN, lenS);
   const pad = (gap: number): AmenityKind => (gap > 5.5 ? 'games' : 'booths');
   if (lenS < lenN - 0.01) amenities.splice(2, 0, { kind: pad(lenN - lenS), w: lenN - lenS, side: 'south' });

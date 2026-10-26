@@ -80,6 +80,10 @@ export interface Agent {
   lastSeen: number;
   /** 지금 상태가 된 때(서버 시각). 옛 저장본에는 없다. */
   statusSince?: number;
+  /** 마지막으로 쓴 도구 이름, 그 호출이 시작된 때와 끝난 때(서버 시각). 도구 방 판단에 쓴다. */
+  lastTool?: string;
+  toolAt?: number;
+  toolEndAt?: number;
   history: HistoryEntry[];
   boundKey?: string;
   /** 메인 세션만: 마지막으로 물어본 것, 마지막 답, 권한 모드(bypassPermissions 등). */

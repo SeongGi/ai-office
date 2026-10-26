@@ -20,6 +20,8 @@ export interface CatAct {
   stretch: number;
   /** 0..1, both arms up and wiggling. */
   cheer: number;
+  /** Tool room pose: 0 none, 1 reading a book, 2 typing at a console, 3 looking at a screen (a paw on the mouse). */
+  work: 0 | 1 | 2 | 3;
 }
 
 export interface CatView {
@@ -51,6 +53,8 @@ export interface CatView {
   /** Seated at a desk (paws type) rather than lounging. */
   atDesk: boolean;
   act?: CatAct;
+  /** 0..1, a speech bubble is over the head, so the small status badge steps aside. */
+  bubble?: number;
 }
 
 /** Height of the head top above the feet, in cat units. */
@@ -93,6 +97,18 @@ function armPose(a: CatAct | undefined, sy: number, headCY: number, t: number) {
     HAND.ry = sy + 0.2 - lift - wig;
     return;
   }
+  if (a.work === 1) {
+    HAND.l = HAND.r = true;
+    HAND.lx = -0.27;
+    HAND.rx = 0.27;
+    HAND.ly = HAND.ry = sy + 0.16;
+    return;
+  }
+  if (a.work === 3) {
+    HAND.r = true;
+    HAND.rx = 0.2;
+    HAND.ry = sy + 0.36 + Math.sin(t * 2.3) * 0.015;
+  }
   if (!a.prop) return;
   const s = a.side;
   let x = s * 0.38;
@@ -113,6 +129,41 @@ function armPose(a: CatAct | undefined, sy: number, headCY: number, t: number) {
     HAND.rx = x;
     HAND.ry = y;
   }
+}
+
+/** An open book held in front of the chest; a page flips now and then. */
+function drawBook(ctx: Ctx, c: CatView, t: number, ol: string) {
+  const flip = Math.max(0, Math.sin(((t * 0.4 + c.seed * 5) % 1) * Math.PI * 2 * 3) - 0.6);
+  ctx.save();
+  ctx.translate(0, -0.28);
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 0.03;
+  ctx.strokeStyle = ol;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.roundRect(s < 0 ? -0.26 : 0.0, -0.14, 0.26, 0.3, 0.025);
+    ctx.fillStyle = s < 0 ? '#fffdf5' : '#fff7e0';
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+      ctx.moveTo(s * 0.05 + (s < 0 ? -0.2 : 0.02), -0.07 + i * 0.07);
+      ctx.lineTo(s * 0.05 + (s < 0 ? -0.04 : 0.18), -0.07 + i * 0.07);
+    }
+    ctx.lineWidth = 0.015;
+    ctx.strokeStyle = '#c9b99a';
+    ctx.stroke();
+    ctx.lineWidth = 0.03;
+    ctx.strokeStyle = ol;
+  }
+  if (flip > 0) {
+    ctx.beginPath();
+    ctx.roundRect(0, -0.14, 0.26 * (1 - flip * 1.6), 0.3, 0.025);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 const CAN_COLORS = ['#ff7a8a', '#6bc5ff', '#ffd23f'];
@@ -266,6 +317,7 @@ export function drawCat(ctx: Ctx, c: CatView, t: number, k: number) {
     : status === 'waiting' ? Math.sin(t * 5) * 0.06
     : sleepy ? Math.sin(t * 0.9 + c.seed * 5) * 0.07 + 0.04
     : status === 'error' ? Math.sin(t * 40) * 0.03
+    : c.act && c.act.work === 3 ? -0.1 + Math.sin(t * 1.3 + c.seed * 4) * 0.03
     : Math.sin(t * 1.5 + c.seed * 4) * 0.015;
   const side = c.look >= 0 ? 1 : -1;
   const act = c.act;
@@ -319,7 +371,7 @@ export function drawCat(ctx: Ctx, c: CatView, t: number, k: number) {
   {
     const sy = bodyCY - 0.1;
     const swing = moving ? Math.sin(c.walkPhase) * 0.12 : 0;
-    const typing = c.atDesk && status === 'working';
+    const typing = (c.atDesk && status === 'working') || act?.work === 2;
     armPose(act, sy, headCY, t);
     // left arm
     if (HAND.l) limb(ctx, -0.23, sy, HAND.lx, HAND.ly, 0.12, c.fur, ol, lw);
@@ -518,11 +570,13 @@ export function drawCat(ctx: Ctx, c: CatView, t: number, k: number) {
   ctx.stroke();
   ctx.restore(); // head frame
 
+  if (act && act.work === 1) drawBook(ctx, c, t, ol);
+
   // ---- held prop (in front of the face while sipping)
   if (act && act.prop && act.stretch < 0.01 && act.cheer < 0.01) drawProp(ctx, c, act, t, ol);
 
   // ---- status effects
-  const b = c.badge;
+  const b = (c.bubble ?? 0) > 0.05 && (status === 'thinking' || status === 'error') ? 0 : c.badge;
   if (b > 0.02) {
     const bx = 0.5;
     const by = headCY - 0.62;

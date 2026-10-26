@@ -16,16 +16,18 @@ Every integration does the same thing: turn "something happened in my agent" int
 }
 ```
 
-The real snippet also covers `UserPromptSubmit`, `Notification`, `Stop`, `SubagentStop`, `PreCompact` and `SessionEnd`, and uses the absolute path of your install so it does not depend on `PATH`.
+The real snippet also covers `UserPromptSubmit`, `PostToolUseFailure`, `Notification`, `Stop`, `SubagentStop`, `PreCompact` and `SessionEnd`, and uses the absolute path of your install so it does not depend on `PATH`.
 
 | Hook | On the floor |
 | --- | --- |
 | `SessionStart` | The lead walks in. |
 | `UserPromptSubmit` | Thinking, with your prompt as the activity. |
 | `PreToolUse` | Working. The monitor shows the tool and a readable summary ("Running npm test", "Editing cart.ts"). |
+| `PreToolUse` (while working) | Cats that keep reading or searching walk to a tool room: Read, Glob, Grep and LS to the library (자료실), Bash to the server room (서버실), WebSearch, WebFetch and MCP tools to the search room (정보검색실). Editing stays at the desk. |
 | `PreToolUse` on `Task` / `Agent` | A helper walks in and gets a briefing plane with the task description. |
 | `PreToolUse` on `TodoWrite` | The current todo goes on the team whiteboard. |
 | `PostToolUse` on `Task` / `Agent` | The helper sends a "Report ready" plane back and finishes. |
+| `PostToolUseFailure` | A red "failed" bubble with the tool name over the cat for about 4 seconds. The next tool or `Stop` hook clears it; if none comes, the floor turns it back to thinking after 4 seconds. |
 | `Notification` | Waiting: the lead waves for you. |
 | `Stop` | Idle. |
 | `SessionEnd` | The lead walks out. |

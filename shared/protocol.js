@@ -281,13 +281,21 @@ export function applyEvent(state, rawEv) {
     case 'status': {
       if (ev.status) agent.status = ev.status;
       if (ev.activity !== undefined) agent.activity = ev.activity;
-      if (ev.status && ev.status !== 'working') agent.tool = undefined;
+      if (ev.status && ev.status !== 'working') {
+        if (agent.tool) agent.toolEndAt = now;
+        agent.tool = undefined;
+      }
       pushHistory(agent, { ts: now, kind: 'status', status: agent.status, text: ev.activity || agent.status });
       break;
     }
     case 'tool': {
       agent.status = ev.status || 'working';
       agent.tool = ev.tool;
+      // lastTool/toolAt/toolEndAt outlive the status change; the renderers decide from them which tool room a cat uses.
+      if (ev.tool) {
+        agent.lastTool = ev.tool;
+        agent.toolAt = now;
+      }
       agent.activity = ev.activity || (ev.tool ? `Using ${ev.tool}` : agent.activity);
       pushHistory(agent, { ts: now, kind: 'tool', tool: ev.tool, text: agent.activity });
       break;

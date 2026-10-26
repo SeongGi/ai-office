@@ -92,7 +92,7 @@ function make(id: string, role: Role): Npc {
     seed: (h % 1000) / 1000,
     alpha: 1,
     atDesk: false,
-    act: { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0 },
+    act: { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0, work: 0 },
     say: '',
     sayAt: 0,
     sayFor: 0,

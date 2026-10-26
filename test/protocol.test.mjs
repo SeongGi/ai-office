@@ -173,3 +173,36 @@ test('statusSince moves only when the status really changes', () => {
   assert.ok(s.agents.a.statusSince >= joined);
   assert.equal(s.agents.a.status, 'working');
 });
+
+test('PostToolUseFailure: becomes an error status naming the tool, and the next tool event clears it', () => {
+  const base = { session_id: 'sess1234', cwd: '/x/shop' };
+  const [fail] = fromClaude({ ...base, hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', tool_input: { command: 'false' }, error: 'exit 1' });
+  assert.equal(fail.type, 'status');
+  assert.equal(fail.status, 'error');
+  assert.equal(fail.activity, '실패했어요: Bash');
+  const [mcp] = fromClaude({ ...base, hook_event_name: 'PostToolUseFailure', tool_name: 'mcp__github__list_prs' });
+  assert.equal(mcp.activity, '실패했어요: MCP');
+  const sub = fromClaude({ ...base, hook_event_name: 'PostToolUseFailure', tool_name: 'Read', agent_id: 'ag_1', agent_type: 'Explore' })[0];
+  assert.deepEqual(sub.subagent, { key: 'ag_1', type: 'Explore' });
+
+  const state = createState();
+  for (const raw of [...fromClaude({ ...base, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'false' } }), fail]) applyEvent(state, normalizeEvent(raw, 1000));
+  const agent = Object.values(state.agents)[0];
+  assert.equal(agent.status, 'error');
+  assert.equal(agent.lastTool, 'Bash');
+  assert.equal(agent.toolAt, 1000);
+  for (const raw of fromClaude({ ...base, hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/x/a.ts' } })) applyEvent(state, normalizeEvent(raw, 2000));
+  assert.equal(agent.status, 'working');
+  for (const raw of fromClaude({ ...base, hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: {} })) applyEvent(state, normalizeEvent(raw, 5000));
+  assert.equal(agent.status, 'thinking');
+  assert.equal(agent.lastTool, 'Read');
+  assert.equal(agent.toolAt, 2000);
+  assert.equal(agent.toolEndAt, 5000);
+});
+
+test('the hook installer lists PostToolUseFailure with a matcher', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../bin/agent-floor.mjs', import.meta.url), 'utf8');
+  assert.match(src, /'PostToolUseFailure'/);
+  assert.match(src, /e === 'PostToolUseFailure'/);
+});

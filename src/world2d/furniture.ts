@@ -251,3 +251,174 @@ export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: str
   for (const s of [-1, 1]) circle(ctx, x - w / 2 + 0.7 + s * 0.12, y, 0.04, '#3a2d3d', { shadow: false, noLine: true });
   circle(ctx, x - w / 2 + 0.7, y + 0.1, 0.03, '#ff8fa3', { shadow: false, noLine: true });
 }
+
+// ---------------------------------------------------------------- tool rooms (자료실, 서버실, 정보검색실)
+
+export type ToolRoomKind = 'library' | 'server' | 'search';
+
+/** Where a cat stands in a tool room (room-local metres). `via` is the lane it walks down from the aisle; `work` the pose (1 book, 2 typing, 3 looking). */
+export interface ToolSpot {
+  x: number;
+  z: number;
+  look: number;
+  via: number;
+  work: 1 | 2 | 3;
+}
+
+/** The aisle (room-local z) the cats walk along inside a tool room, in front of the furniture. */
+export const TOOL_AISLE = 2.4;
+
+export function toolSpots(kind: ToolRoomKind, w: number): ToolSpot[] {
+  const e = w / 2;
+  if (kind === 'library') {
+    return [
+      { x: -0.7, z: 0.55, look: 0.3, via: -0.7, work: 1 },
+      { x: 0.7, z: 0.55, look: -0.3, via: 0.7, work: 1 },
+      { x: -e + 1.1, z: -1.9, look: -1, via: -e + 1.1, work: 1 },
+      { x: e - 1.1, z: -1.9, look: 1, via: e - 1.1, work: 1 },
+      { x: 0, z: -2.9, look: 0, via: e - 1.1, work: 1 },
+    ];
+  }
+  if (kind === 'server') {
+    return [
+      { x: -0.6, z: 1.25, look: 0.3, via: -0.6, work: 2 },
+      { x: 0.6, z: 1.25, look: -0.3, via: 0.6, work: 2 },
+      { x: -1.2, z: -2.5, look: 0, via: -1.25, work: 3 },
+      { x: 1.2, z: -2.5, look: 0, via: 1.25, work: 3 },
+      { x: 0, z: -2.5, look: 0, via: 1.25, work: 3 },
+    ];
+  }
+  return [
+    { x: -0.6, z: 0.2, look: 0.3, via: -0.6, work: 2 },
+    { x: 0.6, z: 0.2, look: -0.3, via: 0.6, work: 2 },
+    { x: -e + 0.9, z: -1.2, look: -0.7, via: -e + 0.9, work: 3 },
+    { x: e - 0.9, z: -1.2, look: 0.7, via: e - 0.9, work: 3 },
+    { x: 0, z: -2.5, look: 0, via: e - 0.9, work: 3 },
+  ];
+}
+
+/** Rack cabinets of the server room: centre and size in room-local metres (rot in canvas radians). */
+export function serverRacks(w: number): { x: number; z: number; rot: number }[] {
+  const e = w / 2;
+  const back = -OFFICE_D / 2 + 0.55;
+  return [
+    { x: -1.4, z: back, rot: 0 },
+    { x: 0, z: back, rot: 0 },
+    { x: 1.4, z: back, rot: 0 },
+    { x: -e + 0.45, z: -1.2, rot: Math.PI / 2 },
+    { x: e - 0.45, z: -1.2, rot: Math.PI / 2 },
+  ];
+}
+const RACK_W = 1.0;
+const RACK_D = 0.8;
+const LED_ROWS = 4;
+
+function rackBody(ctx: Ctx, r: { x: number; z: number; rot: number }) {
+  item(ctx, r.x, r.z, r.rot, () => {
+    rbox(ctx, 0, 0, RACK_W, RACK_D, P.dark ? '#3a4262' : '#4a5470', 0.1);
+    rbox(ctx, 0, 0.1, RACK_W - 0.14, RACK_D - 0.3, P.dark ? '#262c45' : '#333b55', 0.06, { shadow: false, lw: 0.02 });
+    for (let i = 0; i < LED_ROWS; i++) rbox(ctx, 0.08, 0.0 + i * 0.12 - 0.12, RACK_W - 0.44, 0.07, '#232a40', 0.03, { shadow: false, noLine: true });
+  });
+}
+
+/** The blinking lights, drawn every frame over the cached room. Red while a cat works in the server room, green otherwise. */
+export function drawServerLeds(ctx: Ctx, w: number, t: number, busy: boolean) {
+  const racks = serverRacks(w);
+  for (let ri = 0; ri < racks.length; ri++) {
+    const r = racks[ri];
+    ctx.save();
+    ctx.translate(r.x, r.z);
+    if (r.rot) ctx.rotate(r.rot);
+    for (let i = 0; i < LED_ROWS; i++) {
+      const on = Math.sin(t * (busy ? 9 : 3) + ri * 1.7 + i * 2.3) > -0.3;
+      const col = busy ? '#ff4d4d' : '#4dff88';
+      ctx.beginPath();
+      ctx.arc(-RACK_W / 2 + 0.17, i * 0.12 - 0.12, 0.04, 0, Math.PI * 2);
+      ctx.fillStyle = on ? col : P.dark ? '#26324a' : '#39445f';
+      ctx.fill();
+      if (on && busy) {
+        ctx.beginPath();
+        ctx.arc(-RACK_W / 2 + 0.17, i * 0.12 - 0.12, 0.09, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,77,77,0.28)';
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function monitor(ctx: Ctx, x: number, z: number, w: number, color: string) {
+  rbox(ctx, x, z, w, 0.3, '#2b3042', 0.05, { lw: 0.03 });
+  rbox(ctx, x, z + 0.02, w - 0.1, 0.18, color, 0.03, { shadow: false, noLine: true });
+}
+
+function consoleDesk(ctx: Ctx, x: number, z: number, w: number, screens: string[]) {
+  rbox(ctx, x, z, w, 0.62, P.metal, 0.12);
+  rbox(ctx, x, z, w - 0.12, 0.5, lighten(P.metal, 0.25), 0.1, { shadow: false, lw: 0.02 });
+  const n = screens.length;
+  for (let i = 0; i < n; i++) monitor(ctx, x + (i - (n - 1) / 2) * (w / n), z - 0.12, w / n - 0.2, screens[i]);
+  rbox(ctx, x, z + 0.17, 0.7, 0.12, '#fbfbff', 0.04, { lw: 0.025, shadow: false });
+}
+
+/** 자료실: bookshelves on three walls, a reading table with an open book. */
+export function libraryRoom(ctx: Ctx, w: number) {
+  const e = w / 2;
+  const back = -OFFICE_D / 2 + 0.3;
+  rug(ctx, 0, -0.4, Math.min(3.6, w - 1.0), 2.5, P.dark ? '#4a4378' : '#e9e0c8');
+  bookshelf(ctx, -e / 2, back, 0, e - 0.25);
+  bookshelf(ctx, e / 2, back, 0, e - 0.25);
+  bookshelf(ctx, -e + 0.3, -1.9, Math.PI / 2, 2.6);
+  bookshelf(ctx, e - 0.3, -1.9, Math.PI / 2, 2.6);
+  bookshelf(ctx, -e + 0.3, 1.2, Math.PI / 2, 2.0);
+  bookshelf(ctx, e - 0.3, 1.2, Math.PI / 2, 2.0);
+  rbox(ctx, 0, -0.45, 1.6, 0.8, P.woodLight, 0.18);
+  rbox(ctx, 0, -0.45, 1.46, 0.66, lighten(P.woodLight, 0.3), 0.14, { shadow: false, lw: 0.02 });
+  rbox(ctx, -0.2, -0.45, 0.34, 0.4, '#ffffff', 0.04, { shadow: false, lw: 0.02 });
+  rbox(ctx, 0.16, -0.45, 0.34, 0.4, '#fff7e0', 0.04, { shadow: false, lw: 0.02 });
+  circle(ctx, 0.62, -0.62, 0.1, '#ffe6a8', { lw: 0.03 });
+  plant(ctx, e - 0.6, OFFICE_D / 2 - 0.7, 1.0);
+}
+
+/** 서버실: rack cabinets (the lights are drawn by drawServerLeds) and a console desk. */
+export function serverRoom(ctx: Ctx, w: number) {
+  const e = w / 2;
+  rug(ctx, 0, 0.2, Math.min(3.2, w - 1.0), 2.2, P.dark ? '#343a5c' : '#d6dce8');
+  for (const r of serverRacks(w)) rackBody(ctx, r);
+  consoleDesk(ctx, 0, 0.3, 2.0, ['#6bd6ff', '#9be7a5']);
+  // cable run on the floor
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = P.dark ? '#5c6a96' : '#8d9ab8';
+  ctx.lineWidth = 0.05;
+  ctx.beginPath();
+  ctx.moveTo(-1.4, -3.1);
+  ctx.quadraticCurveTo(-1.4, -0.8, -0.5, -0.1);
+  ctx.moveTo(1.4, -3.1);
+  ctx.quadraticCurveTo(1.4, -0.8, 0.5, -0.1);
+  ctx.stroke();
+  ctx.restore();
+  plant(ctx, e - 0.6, OFFICE_D / 2 - 0.7, 1.0);
+}
+
+/** 정보검색실: a wall of monitors, a globe and a search desk. */
+export function searchRoom(ctx: Ctx, w: number) {
+  const e = w / 2;
+  const back = -OFFICE_D / 2 + 0.45;
+  const cols = ['#8fd3ff', '#b9a6ff', '#a6e3b5'];
+  for (let i = 0; i < 3; i++) monitor(ctx, (i - 1) * 1.4, back, 1.15, cols[i]);
+  consoleDesk(ctx, 0, -1.05, 2.2, ['#8fd3ff', '#ffd27a']);
+  // globe on a stand
+  const gx = -e + 0.85;
+  const gz = -2.4;
+  circle(ctx, gx, gz + 0.2, 0.3, P.wood);
+  circle(ctx, gx, gz, 0.46, '#8ec9ff');
+  ctx.save();
+  ctx.fillStyle = '#7bd08f';
+  ctx.beginPath();
+  ctx.ellipse(gx - 0.12, gz - 0.1, 0.17, 0.12, 0.5, 0, Math.PI * 2);
+  ctx.ellipse(gx + 0.16, gz + 0.12, 0.12, 0.09, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  circle(ctx, gx - 0.15, gz - 0.18, 0.08, '#ffffff', { shadow: false, noLine: true });
+  plant(ctx, e - 0.6, OFFICE_D / 2 - 0.7, 1.0);
+}

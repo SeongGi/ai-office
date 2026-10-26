@@ -268,11 +268,11 @@ const hookCmd = (kind) => (viaNpx ? `npx -y agent-floor hook ${kind}` : `node "$
 
 function claudeHooks() {
   const command = hookCmd('claude');
-  const events = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop', 'PreCompact', 'SessionEnd'];
+  const events = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Notification', 'Stop', 'SubagentStop', 'PreCompact', 'SessionEnd'];
   const hooks = {};
   for (const e of events) {
     const entry = { hooks: [{ type: 'command', command, timeout: 5 }] };
-    if (e === 'PreToolUse' || e === 'PostToolUse') entry.matcher = '*';
+    if (e === 'PreToolUse' || e === 'PostToolUse' || e === 'PostToolUseFailure') entry.matcher = '*';
     hooks[e] = [entry];
   }
   return hooks;

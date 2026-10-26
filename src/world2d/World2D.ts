@@ -1,6 +1,21 @@
 // The 2D "round cartoon" office. Canvas2D only. Same public surface as the 3D World.
 import type { Agent, Effect, WorldState } from '../../shared/protocol';
-import { desiredPlace, idleAgeMs, initialPlace, type Place } from '../../shared/places';
+import {
+  createToolState,
+  desiredPlace,
+  effectiveStatus,
+  failureTool,
+  idleAgeMs,
+  initialPlace,
+  initialToolState,
+  isToolFailure,
+  stepToolRoom,
+  thinkingText,
+  TOOL_FAIL_PREFIX,
+  type Place,
+  type ToolRoom,
+  type ToolState,
+} from '../../shared/places';
 import type { FloorWorld, WorldPerf } from '../core/worldApi';
 import {
   computeLayout,
@@ -20,8 +35,8 @@ import { BASE_PX, Camera2D, MIN_ZOOM } from './camera';
 import { drawCat, HEAD_TOP } from './cat';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
-import { circle, rbox, setStyle } from './draw';
-import { NEWHIRE_MIN_W } from './furniture';
+import { circle, rbox, setStyle, text, textWidth } from './draw';
+import { drawServerLeds, NEWHIRE_MIN_W, TOOL_AISLE, toolSpots } from './furniture';
 import { Npcs } from './npcs';
 import { PALETTES2D, type ThemeName } from './palette2d';
 import { drawScene, ELEV, sceneBounds, sceneKey, type Rect4, type SceneData } from './scene';
@@ -92,7 +107,11 @@ export class World2D implements FloorWorld {
   private reduced = prefersReducedMotion();
   private idleSince = new Map<string, number>();
   private nextSpawnAt = 0;
-  private slots = { meeting: new Map<string, number>(), lounge: new Map<string, number>(), games: new Map<string, number>(), kitchen: new Map<string, number>() };
+  private slots = { meeting: new Map<string, number>(), lounge: new Map<string, number>(), games: new Map<string, number>(), kitchen: new Map<string, number>(), library: new Map<string, number>(), server: new Map<string, number>(), search: new Map<string, number>() };
+  private toolStates = new Map<string, ToolState>();
+  /** More than 12 cats on screen at low zoom: thinking clouds would only clutter, so they stay away. Checked once a second. */
+  private crowded = false;
+  private bubbleWidths = new Map<string, number>();
   private life = new BreakLife();
   private npcs = new Npcs();
   private letters: Letter[] = [];
@@ -184,7 +203,7 @@ export class World2D implements FloorWorld {
           s.arrive([SPAWN, ...room.entry.map((p) => this.w(room, p))], seatW, (at - now) / 1000);
         }
       } else s.setSeat(seatW);
-      s.setStatus(agent.status);
+      this.applyStatus(s, agent);
       if (agent.status !== 'idle') this.idleSince.delete(agent.id);
       // Idle time counts from the server's status change on load, from now afterwards.
       else if (!this.idleSince.has(agent.id)) this.idleSince.set(agent.id, performance.now() - (instant ? idleAgeMs(agent, Date.now()) : 0));
@@ -242,24 +261,35 @@ export class World2D implements FloorWorld {
 
   /** First sight of a cat on load: put it where its state says, with no walk. */
   private placeNow(s: Agent2D, agent: Agent, state: WorldState) {
-    const want = initialPlace(agent, state.agents, Date.now(), state.meeting);
+    const now = Date.now();
+    const want = initialPlace(agent, state.agents, now, state.meeting);
+    this.toolStates.set(agent.id, initialToolState(agent, now));
     this.freeSlot(agent.id);
     s.place = 'desk';
     if (want === 'desk') return;
     const trip = this.tripTo(s.team, want, agent.id);
     if (!trip) return;
     s.placeAt(trip.route, trip.look, trip.sit);
+    s.workPose = trip.work;
     s.place = want;
   }
 
   private updatePlaces() {
     if (!this.state || !this.plan) return;
     const now = performance.now();
+    const wall = Date.now();
+    let shown = 0;
+    if (this.camera.zoom < 1.0) for (const s of this.agents.values()) if (s.mode !== 'gone' && !s.leaving) shown++;
+    this.crowded = shown > 12;
     for (const [id, s] of this.agents) {
       const agent = this.state.agents[id];
       if (!agent || s.leaving || s.mode === 'leaving' || s.mode === 'gone') continue;
+      this.applyStatus(s, agent);
       if (s.mode === 'walking' && !s.isAway()) continue;
-      const want: Place | 'farewell' = this.farewells > 0 ? 'farewell' : desiredPlace(agent, this.state.agents, this.idleSince.get(id) ?? null, now, this.state.meeting);
+      let ts = this.toolStates.get(id);
+      if (!ts) this.toolStates.set(id, (ts = createToolState()));
+      const room = stepToolRoom(ts, agent, wall);
+      const want: Place | 'farewell' = this.farewells > 0 ? 'farewell' : desiredPlace(agent, this.state.agents, this.idleSince.get(id) ?? null, now, this.state.meeting, room);
       if (want === s.place) continue;
       if (want === 'farewell') {
         this.freeSlot(id);
@@ -281,6 +311,7 @@ export class World2D implements FloorWorld {
       if (!trip) continue;
       if (this.reduced) s.placeAt(trip.route, trip.look, trip.sit);
       else s.goTo(trip.route, trip.look, trip.sit);
+      s.workPose = trip.work;
       s.place = want;
     }
   }
@@ -305,6 +336,43 @@ export class World2D implements FloorWorld {
     this.slots.lounge.delete(id);
     this.slots.games.delete(id);
     this.slots.kitchen.delete(id);
+    this.slots.library.delete(id);
+    this.slots.server.delete(id);
+    this.slots.search.delete(id);
+  }
+
+  /** Status as drawn (a tool failure turns back to thinking after a few seconds), plus the bubble over the head. */
+  private applyStatus(s: Agent2D, agent: Agent) {
+    const status = effectiveStatus(agent, Date.now());
+    s.setStatus(status);
+    if (status === 'error' && isToolFailure(agent)) {
+      if (s.failKey !== agent.lastSeen) {
+        s.failKey = agent.lastSeen;
+        s.bubbleKind = 2;
+        s.bubbleText = TOOL_FAIL_PREFIX;
+        s.bubbleSub = failureTool(agent);
+      }
+      s.bubbleWant = 1;
+    } else if (status === 'thinking') {
+      // After a failure the old activity is the failure text; say nothing about it again.
+      const t = thinkingText(isToolFailure({ ...agent, status: 'error' }) ? '' : agent.activity);
+      if (s.bubbleKind !== 1 || s.bubbleText !== t) {
+        s.bubbleKind = 1;
+        s.bubbleText = t;
+        s.bubbleSub = '';
+      }
+      s.bubbleWant = this.reduced || this.crowded ? 0 : 1;
+    } else s.bubbleWant = 0;
+  }
+
+  /** A free spot number below `count`, or -1 when the room is full (the cat then stays at its desk). */
+  private takeSpot(map: Map<string, number>, id: string, count: number) {
+    const used = new Set(map.values());
+    let n = 0;
+    while (used.has(n)) n++;
+    if (n >= count) return -1;
+    map.set(id, n);
+    return n;
   }
 
   private takeSlot(map: Map<string, number>, id: string, max: number) {
@@ -316,7 +384,7 @@ export class World2D implements FloorWorld {
   }
 
   /** World route from the corridor outside an office door to a spot inside a shared room. */
-  private tripTo(team: string, kind: 'meeting' | 'lounge' | 'games' | 'kitchen', id: string) {
+  private tripTo(team: string, kind: 'meeting' | 'lounge' | 'games' | 'kitchen' | ToolRoom, id: string): { route: P[]; look: number; sit: boolean; work: 0 | 1 | 2 | 3 } | null {
     const room = this.plan?.rooms.get(team);
     const am = this.plan?.amenities.find((a) => a.kind === kind);
     if (!room || !am) return null;
@@ -326,6 +394,16 @@ export class World2D implements FloorWorld {
     const lane = { x: am.rect.x, z: 0 };
     const w = am.rect.w;
     const front = am.rect.d / 2 - 0.7;
+    if (kind === 'library' || kind === 'server' || kind === 'search') {
+      // Tool rooms: in through the door, along the aisle, down a free lane to the spot. Full means the cat stays at its desk.
+      const spots = toolSpots(kind, w);
+      const slot = this.takeSpot(this.slots[kind], id, spots.length);
+      if (slot < 0) return null;
+      const spot = spots[slot];
+      const route = [door, lane, aw(0, front), aw(0, TOOL_AISLE), aw(spot.via, TOOL_AISLE), aw(spot.via, spot.z), aw(spot.x, spot.z)];
+      return { route, look: spot.look, sit: false, work: spot.work };
+    }
+    const done = (t: { route: P[]; look: number; sit: boolean }) => ({ ...t, work: 0 as const });
     if (kind === 'meeting') {
       const slot = this.takeSlot(this.slots.meeting, id, 14);
       const cx = 0;
@@ -346,7 +424,7 @@ export class World2D implements FloorWorld {
         route.push(outer(a0));
       }
       route.push(aw(cx + Math.cos(ang) * rx, cz + Math.sin(ang) * rz));
-      return { route, look: 0, sit: chair };
+      return done({ route, look: 0, sit: chair });
     }
     if (kind === 'games' || kind === 'kitchen') {
       const table = w > 5.2;
@@ -384,7 +462,7 @@ export class World2D implements FloorWorld {
       const behind = kind === 'kitchen' ? spot.z < -1.0 : table && spot.z < -1.1;
       const x = !behind ? spot.x : kind === 'kitchen' ? -1.9 : Math.sign(spot.x) * 1.7;
       const route = [door, lane, aw(0, front), aw(0, aisle), aw(x, aisle), aw(x, spot.z), aw(spot.x, spot.z)];
-      return { route, look: spot.look, sit: false };
+      return done({ route, look: spot.look, sit: false });
     }
     // lounge: sofa, armchairs and beanbags first (sit), then standing spots
     const spots: { x: number; z: number; sit: boolean }[] = [
@@ -411,7 +489,7 @@ export class World2D implements FloorWorld {
       route.push(aw(x, aisle), aw(x, -1.3), aw(spot.x, -1.3));
     } else route.push(aw(spot.x, aisle));
     route.push(aw(spot.x, spot.z));
-    return { route, look: 0, sit: spot.sit };
+    return done({ route, look: 0, sit: spot.sit });
   }
 
   // ---------------------------------------------------------------- arrivals and departures
@@ -447,6 +525,7 @@ export class World2D implements FloorWorld {
     this.agents.delete(id);
     this.life.forget(id);
     this.idleSince.delete(id);
+    this.toolStates.delete(id);
     this.freeSlot(id);
     if (this.hovered === id) this.setHover(null);
     if (this.following === id) this.following = null;
@@ -462,6 +541,7 @@ export class World2D implements FloorWorld {
     this.instantNext = true;
     this.hasFramed = false;
     this.autoFrame = true;
+    this.toolStates.clear();
   }
 
   handleEffect(effect: Effect) {
@@ -842,6 +922,7 @@ export class World2D implements FloorWorld {
     items.sort((p, q) => p.y - q.y);
 
     for (const d of desks) drawChair(ctx, d, theme);
+    this.drawServerLights(ctx, t);
     if (!this.reduced) this.life.drawFx(ctx, t);
     for (const it of items) {
       if (it.kind === 3) this.life.drawRally(ctx, k);
@@ -866,6 +947,8 @@ export class World2D implements FloorWorld {
       this.life.drawEmotes(ctx, this.agents, t, k);
       this.npcs.drawBubbles(ctx, t, k);
     }
+
+    this.drawBubbles(ctx, t, k);
 
     // letters and ripples
     for (const r of this.ripples) {
@@ -900,6 +983,126 @@ export class World2D implements FloorWorld {
       ctx.lineJoin = 'round';
       ctx.stroke();
       circle(ctx, 0.2, 0.17, 0.06, '#ff7a9a', { shadow: false, noLine: true });
+      ctx.restore();
+    }
+  }
+
+  /** Rack lights in the server room: red while a cat works there, green otherwise. */
+  private drawServerLights(ctx: CanvasRenderingContext2D, t: number) {
+    const am = this.plan?.amenities.find((a) => a.kind === 'server');
+    if (!am) return;
+    let busy = false;
+    for (const a of this.agents.values()) if (a.place === 'server' && a.mode === 'standing') busy = true;
+    ctx.save();
+    ctx.translate(am.rect.x, am.rect.z);
+    if (am.side === 'south') ctx.rotate(Math.PI);
+    drawServerLeds(ctx, am.rect.w, this.reduced ? 0 : t, busy);
+    ctx.restore();
+  }
+
+  private bubbleWidth(ctx: CanvasRenderingContext2D, str: string) {
+    let w = this.bubbleWidths.get(str);
+    if (w === undefined) {
+      w = textWidth(ctx, str, 1);
+      if (this.bubbleWidths.size > 400) this.bubbleWidths.clear();
+      this.bubbleWidths.set(str, w);
+    }
+    return w;
+  }
+
+  /** Thinking cloud and red failure bubble beside each cat's head (the name tags sit right above it). One per cat. */
+  private drawBubbles(ctx: CanvasRenderingContext2D, t: number, k: number) {
+    for (const a of this.agents.values()) {
+      if (a.bubbleKind === 0 || a.bubble < 0.02 || a.mode === 'gone' || a.leaving) continue;
+      const fail = a.bubbleKind === 2;
+      const pulse = fail || this.reduced ? 1 : 0.78 + 0.22 * Math.sin(t * 1.7 + a.seed * 6);
+      const vis = Math.min(1, a.bubble);
+      // Up to two lines: the thinking text breaks after 9 characters, a failure shows the message and the tool.
+      let l1 = a.bubbleText;
+      let l2 = a.bubbleSub;
+      if (!fail && [...l1].length > 9) {
+        const c = [...l1];
+        let cut = c.lastIndexOf(' ', 11);
+        if (cut < 3) cut = 9;
+        l1 = c.slice(0, cut).join('').trim();
+        l2 = c.slice(cut).join('').trim();
+      }
+      const sz = 0.24 * k;
+      const w1 = this.bubbleWidth(ctx, l1) * sz;
+      const w2 = l2 ? this.bubbleWidth(ctx, l2) * sz * (fail ? 0.85 : 1) : 0;
+      const lineH = 0.3 * k;
+      const w = Math.max(w1, w2) + 0.45 * k + (fail ? 0.3 * k : 0);
+      const h = (l2 ? 2 : 1) * lineH + 0.22 * k;
+      const hx = a.x + 0.38 * k;
+      const hcy = a.z + (-0.8 + 0.2 * a.sit) * k - a.hop;
+      const left = hx + 0.3 * k;
+      // Beside the body, below the head top: the name tags above the head stay clear.
+      const cy = hcy + 0.55 * k - h / 2 - (1 - vis) * 0.12 * k;
+      const cx = left + w / 2;
+      const fill = fail ? '#ff5a5a' : '#ffffff';
+      const line = fail ? '#c93a3a' : '#8fb4d9';
+      ctx.save();
+      ctx.globalAlpha *= vis * pulse;
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 0.04 * k;
+      ctx.strokeStyle = line;
+      ctx.fillStyle = fill;
+      if (fail) {
+        ctx.beginPath();
+        ctx.moveTo(left + 0.04 * k, cy + h / 2 - 0.3 * k);
+        ctx.lineTo(hx - 0.04 * k, hcy + 0.2 * k);
+        ctx.lineTo(left + 0.04 * k, cy + h / 2 - 0.08 * k);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        for (const [dx, dy, r] of [[0.0, 0.22, 0.05], [0.15, 0.2, 0.08]] as const) {
+          ctx.beginPath();
+          ctx.arc(hx + dx * k, hcy + dy * k, r * k, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+      const r = Math.min(h / 2, 0.32 * k);
+      ctx.beginPath();
+      ctx.roundRect(left, cy - h / 2, w, h, fail ? 0.16 * k : r);
+      if (!fail) {
+        // cloud: a few bumps along the top edge
+        const n = Math.max(2, Math.round(w / (0.55 * k)));
+        for (let i = 0; i < n; i++) {
+          const bx = left + r * 0.6 + ((w - r * 1.2) * (i + 0.5)) / n;
+          ctx.moveTo(bx + r * 0.5, cy - h / 2 + 0.02 * k);
+          ctx.arc(bx, cy - h / 2 + 0.02 * k, r * 0.5, 0, Math.PI * 2);
+        }
+      }
+      ctx.fill();
+      ctx.stroke();
+      if (!fail) {
+        // hide the outline where the body and the bumps meet
+        ctx.beginPath();
+        ctx.roundRect(left + 0.03 * k, cy - h / 2 + 0.03 * k, w - 0.06 * k, h - 0.06 * k, r);
+        ctx.fill();
+      }
+      let tx = cx;
+      if (fail) {
+        // sweat drop
+        const dx = left + 0.28 * k;
+        ctx.beginPath();
+        ctx.moveTo(dx, cy - 0.13 * k);
+        ctx.bezierCurveTo(dx + 0.11 * k, cy + 0.02 * k, dx + 0.08 * k, cy + 0.13 * k, dx, cy + 0.13 * k);
+        ctx.bezierCurveTo(dx - 0.08 * k, cy + 0.13 * k, dx - 0.11 * k, cy + 0.02 * k, dx, cy - 0.13 * k);
+        ctx.fillStyle = '#bfe8ff';
+        ctx.fill();
+        ctx.lineWidth = 0.03 * k;
+        ctx.strokeStyle = '#4aa8e0';
+        ctx.stroke();
+        tx += 0.15 * k;
+      }
+      const ink = fail ? '#ffffff' : '#46607f';
+      if (l2) {
+        text(ctx, l1, tx, cy - lineH / 2, sz, ink, { weight: 800 });
+        text(ctx, l2, tx, cy + lineH / 2, sz * (fail ? 0.85 : 1), fail ? '#ffe5e5' : ink, { weight: 700 });
+      } else text(ctx, l1, tx, cy + 0.01 * k, sz, ink, { weight: 700 });
       ctx.restore();
     }
   }

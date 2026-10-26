@@ -43,8 +43,8 @@ export function sceneKey(d: SceneData) {
   return `${d.theme}|${d.plan.x1.toFixed(2)}|${rooms}|${am}`;
 }
 
-const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스', interview: '면접실' };
-const AMENITY_TINT: Record<AmenityKind, string> = { kitchen: '#e4f4e8', meeting: '#ebe4f8', lounge: '#fbe8e2', games: '#e1f1f8', booths: '#eceff7', interview: '#f6ecd9' };
+const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스', interview: '면접실', library: '자료실', server: '서버실', search: '정보검색실' };
+const AMENITY_TINT: Record<AmenityKind, string> = { kitchen: '#e4f4e8', meeting: '#ebe4f8', lounge: '#fbe8e2', games: '#e1f1f8', booths: '#eceff7', interview: '#f6ecd9', library: '#f1ead8', server: '#e3e8f3', search: '#e2f0f6' };
 
 const yawOf = (side: 'north' | 'south') => (side === 'north' ? 0 : Math.PI);
 const roomDoorX = (r: RoomLayout) => r.x + (r.side === 'north' ? r.doorX : -r.doorX);
@@ -362,6 +362,15 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       break;
     case 'interview':
       if (w >= F.INTERVIEW_MIN_W) F.interviewRoom(ctx, w);
+      break;
+    case 'library':
+      F.libraryRoom(ctx, w);
+      break;
+    case 'server':
+      F.serverRoom(ctx, w);
+      break;
+    case 'search':
+      F.searchRoom(ctx, w);
       break;
     case 'meeting':
       F.screenWall(ctx, 0, back + 0.4);
