@@ -78,6 +78,8 @@ export interface Agent {
   tool?: string;
   joinedAt: number;
   lastSeen: number;
+  /** 지금 상태가 된 때(서버 시각). 옛 저장본에는 없다. */
+  statusSince?: number;
   history: HistoryEntry[];
   boundKey?: string;
   /** 메인 세션만: 마지막으로 물어본 것, 마지막 답, 권한 모드(bypassPermissions 등). */

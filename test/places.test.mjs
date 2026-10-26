@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { breakPlace, desiredPlace, LOUNGE_AFTER_MS } from '../shared/places.js';
+import { breakPlace, desiredPlace, idleAgeMs, initialPlace, LOUNGE_AFTER_MS } from '../shared/places.js';
 
 const a = (id, status, parent) => ({ id, status, parent });
 const world = (...list) => Object.fromEntries(list.map((x) => [x.id, x]));
@@ -51,4 +51,33 @@ test('meeting covers: whole floor or one team, done agents too, offline stays at
   assert.equal(desiredPlace(x, agents, null, 0, t1), 'meeting');
   assert.equal(desiredPlace(y, agents, null, 0, t1), 'desk');
   assert.equal(desiredPlace(x, agents, null, 0, undefined), 'desk');
+});
+
+test('first load: idle long enough by server time goes straight to its break room', () => {
+  const now = 1_000_000;
+  const agents = world({ id: 'p', status: 'idle', statusSince: now - LOUNGE_AFTER_MS - 1 });
+  assert.equal(initialPlace(agents.p, agents, now), breakPlace('p'));
+  agents.p.statusSince = now - LOUNGE_AFTER_MS + 1;
+  assert.equal(initialPlace(agents.p, agents, now), 'desk');
+});
+
+test('first load: older saved states without statusSince fall back to lastSeen', () => {
+  const now = 1_000_000;
+  const agents = world({ id: 'p', status: 'idle', lastSeen: now - 60_000 });
+  assert.equal(initialPlace(agents.p, agents, now), breakPlace('p'));
+  assert.equal(idleAgeMs(agents.p, now), 60_000);
+});
+
+test('first load: meeting, helper and offline follow the same rules', () => {
+  const now = 1_000_000;
+  const agents = world({ id: 'p', status: 'working', team: 't' }, { id: 'h', status: 'working', parent: 'p', team: 't' }, { id: 'o', status: 'offline', team: 't' });
+  assert.equal(initialPlace(agents.p, agents, now), 'meeting');
+  assert.equal(initialPlace(agents.h, agents, now), 'desk');
+  const all = { team: '*', startedAt: 0, endsAt: 1 };
+  assert.equal(initialPlace(agents.h, agents, now, all), 'meeting');
+  assert.equal(initialPlace(agents.o, agents, now, all), 'desk');
+});
+
+test('idleAgeMs is 0 for a busy agent', () => {
+  assert.equal(idleAgeMs({ status: 'working', statusSince: 0 }, 99999), 0);
 });

@@ -196,6 +196,26 @@ export function reception(ctx: Ctx, x: number, y: number, w: number) {
   rbox(ctx, x + w * 0.2, y - 0.12, 0.5, 0.26, '#3a3f55', 0.06, { shadow: false, lw: 0.025 });
 }
 
+/** Kitchen interview corner, kitchen-local metres: the table and where each cat sits. Needs a kitchen at least this wide. */
+export const INTERVIEW_MIN_W = 7.0;
+export const INTERVIEW = {
+  table: { x: 2.55, z: 2.6 },
+  boss: { x: 2.55, z: 1.95 },
+  candidate: { x: 2.55, z: 3.4 },
+  waiting: [{ x: 0.9, z: 3.45 }],
+};
+
+/** A small table with a stool for the interviewer, one for the candidate across it, and one for the candidate who waits. */
+export function interviewSet(ctx: Ctx) {
+  const t = INTERVIEW;
+  for (const [i, s] of [t.boss, t.candidate, ...t.waiting].entries()) circle(ctx, s.x, s.z + 0.08, 0.2, P.chairs[(i + 1) % P.chairs.length]);
+  rbox(ctx, t.table.x, t.table.z, 2.0, 0.66, P.wood, 0.16);
+  rbox(ctx, t.table.x, t.table.z, 1.86, 0.54, lighten(P.wood, 0.3), 0.12, { shadow: false, lw: 0.02 });
+  // papers on the table, out at the sides where the cats do not cover them
+  rbox(ctx, t.table.x - 0.72, t.table.z + 0.02, 0.26, 0.34, '#ffffff', 0.03, { shadow: false, lw: 0.02 });
+  rbox(ctx, t.table.x + 0.7, t.table.z - 0.02, 0.22, 0.3, '#fff7e0', 0.03, { shadow: false, lw: 0.02 });
+}
+
 export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string) {
   rbox(ctx, x, y, w, 1.05, P.plaque, 0.4, { lw: 0.08, line: accent });
   text(ctx, '성기 주식회사', x + 0.35, y + 0.02, 0.58, P.plaqueText, { weight: 800 });

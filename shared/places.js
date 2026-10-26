@@ -37,3 +37,19 @@ export function desiredPlace(agent, agents, idleSinceMs, nowMs, meeting) {
   if (agent.status === 'idle' && idleSinceMs != null && nowMs - idleSinceMs >= LOUNGE_AFTER_MS) return breakPlace(agent.id);
   return 'desk';
 }
+
+/**
+ * Where a cat belongs the moment the page opens, from server state alone.
+ * "Idle for how long" comes from the server's `statusSince` (older saved states: `lastSeen`), not from page load.
+ */
+export function initialPlace(agent, agents, nowMs, meeting) {
+  const since = agent.status === 'idle' ? (agent.statusSince ?? agent.lastSeen ?? null) : null;
+  return desiredPlace(agent, agents, since, nowMs, meeting);
+}
+
+/** How long (ms) the agent has been idle by server time, 0 when it is not idle or the time is unknown. */
+export function idleAgeMs(agent, nowMs) {
+  if (agent.status !== 'idle') return 0;
+  const since = agent.statusSince ?? agent.lastSeen;
+  return since == null ? 0 : Math.max(0, nowMs - since);
+}

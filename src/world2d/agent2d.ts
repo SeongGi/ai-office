@@ -53,6 +53,8 @@ export class Agent2D implements CatView {
   main = true;
   farewell = false;
   leaving = false;
+  /** Put at its spot without walking; activities.ts starts such a cat already in its pose, then clears this. */
+  snapped = false;
 
   // CatView
   sit = 1;
@@ -117,6 +119,43 @@ export class Agent2D implements CatView {
       this.look = seat.fx * 0.6;
     }
     if (this.mode === 'seated' && !this.awayRoute) this.trail = [seat.door, ...seat.path];
+  }
+
+  /** Stand (or sit) at the end of `route` right away, as if it had walked there. */
+  placeAt(route: P[], look: number, sitDown: boolean) {
+    const end = route[route.length - 1];
+    if (!end || this.mode === 'leaving' || this.mode === 'gone') return;
+    this.routeId++;
+    this.awayRoute = route;
+    this.awayLook = look;
+    this.awaySit = sitDown;
+    this.endMode = 'standing';
+    this.mode = 'standing';
+    this.path = [];
+    this.x = end.x;
+    this.z = end.z;
+    this.sit = sitDown ? 1 : 0;
+    this.look = look;
+    this.snapped = true;
+    this.trail = this.restTrail();
+  }
+
+  /** Back on the seat right away (reduced motion has no walk). */
+  snapToSeat() {
+    const seat = this.seat;
+    if (!seat || this.mode === 'leaving' || this.mode === 'gone') return;
+    this.routeId++;
+    this.awayRoute = null;
+    this.awaySit = false;
+    this.endMode = 'seated';
+    this.mode = 'seated';
+    this.path = [];
+    this.sit = 1;
+    this.x = seat.x;
+    this.z = seat.z;
+    this.look = seat.fx * 0.6;
+    this.snapped = false;
+    this.trail = [seat.door, ...seat.path];
   }
 
   /** Spawn at the first point and walk the whole way to the seat. */

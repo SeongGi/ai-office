@@ -1,6 +1,6 @@
 // The 2D "round cartoon" office. Canvas2D only. Same public surface as the 3D World.
-import type { Effect, WorldState } from '../../shared/protocol';
-import { desiredPlace, type Place } from '../../shared/places';
+import type { Agent, Effect, WorldState } from '../../shared/protocol';
+import { desiredPlace, idleAgeMs, initialPlace, type Place } from '../../shared/places';
 import type { FloorWorld, WorldPerf } from '../core/worldApi';
 import {
   computeLayout,
@@ -18,9 +18,11 @@ import { BreakLife } from './activities';
 import { Agent2D, type P, type SeatW } from './agent2d';
 import { BASE_PX, Camera2D, MIN_ZOOM } from './camera';
 import { drawCat, HEAD_TOP } from './cat';
+import { INTERVIEW_MIN_W } from './furniture';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle } from './draw';
+import { Npcs } from './npcs';
 import { PALETTES2D, type ThemeName } from './palette2d';
 import { drawScene, ELEV, sceneBounds, sceneKey, type Rect4, type SceneData } from './scene';
 import './world2d.css';
@@ -92,6 +94,7 @@ export class World2D implements FloorWorld {
   private nextSpawnAt = 0;
   private slots = { meeting: new Map<string, number>(), lounge: new Map<string, number>(), games: new Map<string, number>(), kitchen: new Map<string, number>() };
   private life = new BreakLife();
+  private npcs = new Npcs();
   private letters: Letter[] = [];
   private ripples: Ripple[] = [];
   private last = performance.now();
@@ -112,7 +115,7 @@ export class World2D implements FloorWorld {
   private downAt = { x: 0, y: 0 };
   private dragging = false;
   private pinch = 0;
-  private items: { y: number; kind: 0 | 1 | 2 | 3; a?: Agent2D; d?: DeskView }[] = [];
+  private items: { y: number; kind: 0 | 1 | 2 | 3 | 4; a?: Agent2D; d?: DeskView; n?: number }[] = [];
 
   constructor(private container: HTMLElement, private cb: WorldCallbacks) {
     this.ctx = this.canvas.getContext('2d', { alpha: false })!;
@@ -152,6 +155,7 @@ export class World2D implements FloorWorld {
     const prev = this.plan;
     const plan = (this.plan = computeLayout(state, this.book));
     this.life.setPlan(plan);
+    this.npcs.setPlan(plan);
     const reshaped = prev !== null && shapeKey(prev) !== shapeKey(plan);
     if (reshaped) for (const s of this.agents.values()) s.relocate((p) => shiftOf(prev, plan, p));
 
@@ -169,8 +173,10 @@ export class World2D implements FloorWorld {
         s = new Agent2D(agent);
         s.main = !agent.parent;
         this.agents.set(agent.id, s);
-        if (instant || this.reduced) s.setSeat(seatW, true);
-        else {
+        if (instant || this.reduced) {
+          s.setSeat(seatW, true);
+          this.placeNow(s, agent, state);
+        } else {
           // Cats step out of the elevator one after another, not all at once.
           const now = performance.now();
           const at = Math.max(now, this.nextSpawnAt);
@@ -180,7 +186,8 @@ export class World2D implements FloorWorld {
       } else s.setSeat(seatW);
       s.setStatus(agent.status);
       if (agent.status !== 'idle') this.idleSince.delete(agent.id);
-      else if (!this.idleSince.has(agent.id)) this.idleSince.set(agent.id, performance.now());
+      // Idle time counts from the server's status change on load, from now afterwards.
+      else if (!this.idleSince.has(agent.id)) this.idleSince.set(agent.id, performance.now() - (instant ? idleAgeMs(agent, Date.now()) : 0));
       if (agent.status === 'offline' && !s.leaving) this.depart(agent.id);
     }
     if (reshaped) this.rewalk();
@@ -233,8 +240,20 @@ export class World2D implements FloorWorld {
 
   // ---------------------------------------------------------------- places
 
+  /** First sight of a cat on load: put it where its state says, with no walk. */
+  private placeNow(s: Agent2D, agent: Agent, state: WorldState) {
+    const want = initialPlace(agent, state.agents, Date.now(), state.meeting);
+    this.freeSlot(agent.id);
+    s.place = 'desk';
+    if (want === 'desk') return;
+    const trip = this.tripTo(s.team, want, agent.id);
+    if (!trip) return;
+    s.placeAt(trip.route, trip.look, trip.sit);
+    s.place = want;
+  }
+
   private updatePlaces() {
-    if (!this.state || !this.plan || this.reduced) return;
+    if (!this.state || !this.plan) return;
     const now = performance.now();
     for (const [id, s] of this.agents) {
       const agent = this.state.agents[id];
@@ -252,14 +271,16 @@ export class World2D implements FloorWorld {
       }
       if (want === 'desk') {
         this.freeSlot(id);
-        s.returnToSeat();
+        if (this.reduced) s.snapToSeat();
+        else s.returnToSeat();
         s.place = 'desk';
         continue;
       }
       this.freeSlot(id);
       const trip = this.tripTo(s.team, want, id);
       if (!trip) continue;
-      s.goTo(trip.route, trip.look, trip.sit);
+      if (this.reduced) s.placeAt(trip.route, trip.look, trip.sit);
+      else s.goTo(trip.route, trip.look, trip.sit);
       s.place = want;
     }
   }
@@ -353,7 +374,8 @@ export class World2D implements FloorWorld {
               { x: 0.3, z: 0.45, look: -0.6 },
               { x: -0.3, z: -1.45, look: 0 },
               { x: -w / 2 + 1.5, z: 1.3, look: 1 },
-              { x: w / 2 - 1.5, z: 1.3, look: -1 },
+              // The east corner is the interview set when the kitchen is wide enough.
+              ...(w >= INTERVIEW_MIN_W ? [] : [{ x: w / 2 - 1.5, z: 1.3, look: -1 }]),
             ];
       const map = this.slots[kind];
       const slot = this.takeSlot(map, id, spots.length - 1);
@@ -700,6 +722,7 @@ export class World2D implements FloorWorld {
       }
     }
     if (!this.reduced) this.life.update(dt, this.elapsed, this.agents, this.slots);
+    this.npcs.update(this.elapsed, this.elevOpen, this.reduced);
     this.elevOpen = damp(this.elevOpen, near ? 1 : 0, 5, dt);
     for (const l of this.letters) l.t += dt / 1.1;
     this.letters = this.letters.filter((l) => {
@@ -811,6 +834,10 @@ export class World2D implements FloorWorld {
       items.push({ y: a.z, kind: 0, a });
     }
     items.push({ y: ELEV.plane, kind: 2 });
+    for (let i = 0; i < this.npcs.count(); i++) {
+      const y = this.npcs.depth(i);
+      if (y < 1e8) items.push({ y, kind: 4, n: i });
+    }
     const ballY = this.reduced ? null : this.life.rallyDepth();
     if (ballY !== null) items.push({ y: ballY, kind: 3 });
     items.sort((p, q) => p.y - q.y);
@@ -819,6 +846,7 @@ export class World2D implements FloorWorld {
     if (!this.reduced) this.life.drawFx(ctx, t);
     for (const it of items) {
       if (it.kind === 3) this.life.drawRally(ctx, k);
+      else if (it.kind === 4) this.npcs.draw(ctx, it.n!, t, k, this.reduced);
       else if (it.kind === 1) drawDesk(ctx, it.d!, t, theme);
       else if (it.kind === 2) this.drawDoors(ctx, dark);
       else {
@@ -835,7 +863,10 @@ export class World2D implements FloorWorld {
       }
     }
 
-    if (!this.reduced) this.life.drawEmotes(ctx, this.agents, t, k);
+    if (!this.reduced) {
+      this.life.drawEmotes(ctx, this.agents, t, k);
+      this.npcs.drawBubbles(ctx, t, k);
+    }
 
     // letters and ripples
     for (const r of this.ripples) {

@@ -160,3 +160,16 @@ test('rename: 있는 직원 이름만 바꾸고, 없는 직원은 만들지 않�
   assert.equal(normalizeEvent({ type: 'rename', agent: 'a', name: '   ' }), null);
   assert.equal(normalizeEvent({ type: 'rename', agent: 'a' }), null);
 });
+
+test('statusSince moves only when the status really changes', () => {
+  const s = createState();
+  run(s, { type: 'join', agent: 'a', team: 't', ts: 1000 });
+  assert.equal(s.agents.a.statusSince, s.agents.a.joinedAt);
+  const joined = s.agents.a.statusSince;
+  s.agents.a.statusSince = joined - 5000;
+  run(s, { type: 'status', agent: 'a', status: 'idle' });
+  assert.equal(s.agents.a.statusSince, joined - 5000);
+  run(s, { type: 'status', agent: 'a', status: 'working' });
+  assert.ok(s.agents.a.statusSince >= joined);
+  assert.equal(s.agents.a.status, 'working');
+});

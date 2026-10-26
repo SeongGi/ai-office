@@ -7,3 +7,5 @@ export function breakPlace(id: string): 'lounge' | 'games' | 'kitchen';
 export function hasLiveHelper(agent: Agent, agents: Record<string, Agent>): boolean;
 export function desiredPlace(agent: Agent, agents: Record<string, Agent>, idleSinceMs: number | null, nowMs: number, meeting?: WorldState['meeting']): Place;
 export function meetingCovers(meeting: WorldState['meeting'], agent: Agent): boolean;
+export function initialPlace(agent: Agent, agents: Record<string, Agent>, nowMs: number, meeting?: WorldState['meeting']): Place;
+export function idleAgeMs(agent: Agent, nowMs: number): number;

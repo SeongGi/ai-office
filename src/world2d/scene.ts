@@ -5,6 +5,7 @@ import { CORRIDOR, ELEVATOR, LOBBY_WIDTH, OFFICE_D, type AmenityKind, type Build
 import { lighten, mix } from './color';
 import { circle, item, rbox, setStyle, shape, text, textWidth } from './draw';
 import * as F from './furniture';
+import { receptionSpot } from './npcs';
 import { PALETTES2D, type Palette2D, type ThemeName } from './palette2d';
 
 type Ctx = CanvasRenderingContext2D;
@@ -298,7 +299,8 @@ function drawLobby(ctx: Ctx, P: Palette2D, plan: BuildingLayout) {
   const z1 = plan.z1;
   F.rug(ctx, lx + 0.4, z1 - 3.8, 5.0, 3.2, P.dark ? '#4a4378' : '#ffd9c7');
   F.logoBoard(ctx, x0 + 4.3, z0 + 0.95, 5.6, '#ff8a5c');
-  F.reception(ctx, lx - 1.3, z0 + 3.6, 3.2);
+  const rc = receptionSpot(x0, z0);
+  F.reception(ctx, rc.x, rc.z, rc.w);
   F.sofa(ctx, lx + 0.4, z1 - 2.1, 0, 2.7, P.sofa[0]);
   F.armchair(ctx, lx - 2.0, z1 - 3.8, Math.PI / 2, P.sofa[2]);
   F.armchair(ctx, lx + 2.8, z1 - 3.8, -Math.PI / 2, P.sofa[1]);
@@ -354,7 +356,8 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.fridge(ctx, w / 2 - 0.9, back + 0.55);
       F.island(ctx, -0.3, -0.5, 2.4);
       F.roundTable(ctx, -w / 2 + 1.5, 2.1, 0.55, 3);
-      F.roundTable(ctx, w / 2 - 1.5, 2.0, 0.55, 3);
+      if (w >= F.INTERVIEW_MIN_W) F.interviewSet(ctx);
+      else F.roundTable(ctx, w / 2 - 1.5, 2.0, 0.55, 3);
       F.vending(ctx, -w / 2 + 0.7, back + 0.55);
       F.plant(ctx, -w / 2 + 0.6, 0.4, 1.0);
       break;

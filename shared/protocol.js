@@ -158,6 +158,7 @@ function ensureAgent(state, ev, now) {
       tool: undefined,
       joinedAt: now,
       lastSeen: now,
+      statusSince: now,
       history: [],
       boundKey: undefined,
     };
@@ -264,6 +265,7 @@ export function applyEvent(state, rawEv) {
     if (ev.permission) agent.permission = ev.permission;
   }
   if (!existed || agent.status === 'offline') effects.push({ kind: 'arrive', agent: agent.id });
+  const statusBefore = agent.status;
 
   switch (ev.type) {
     case 'join': {
@@ -320,6 +322,8 @@ export function applyEvent(state, rawEv) {
       break;
     }
   }
+  // 상태가 바뀐 때만 갱신한다. 같은 상태를 다시 알리는 이벤트는 lastSeen만 올린다.
+  if (agent.status !== statusBefore) agent.statusSince = now;
   return { state, effects };
 }
 

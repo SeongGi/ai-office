@@ -224,6 +224,11 @@ export class BreakLife {
     L.home = { x: a.x, z: a.z };
     L.homeLook = a.lookGoal;
     a.act.side = a.seed > 0.5 ? 1 : -1;
+    // Placed on load: the mug is already in hand.
+    if (a.snapped) {
+      L.mugAt = t;
+      a.snapped = false;
+    }
   }
 
   private release(a: Agent2D, L: Life) {
