@@ -43,8 +43,8 @@ export function sceneKey(d: SceneData) {
   return `${d.theme}|${d.plan.x1.toFixed(2)}|${rooms}|${am}`;
 }
 
-const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스' };
-const AMENITY_TINT: Record<AmenityKind, string> = { kitchen: '#e4f4e8', meeting: '#ebe4f8', lounge: '#fbe8e2', games: '#e1f1f8', booths: '#eceff7' };
+const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스', interview: '면접실' };
+const AMENITY_TINT: Record<AmenityKind, string> = { kitchen: '#e4f4e8', meeting: '#ebe4f8', lounge: '#fbe8e2', games: '#e1f1f8', booths: '#eceff7', interview: '#f6ecd9' };
 
 const yawOf = (side: 'north' | 'south') => (side === 'north' ? 0 : Math.PI);
 const roomDoorX = (r: RoomLayout) => r.x + (r.side === 'north' ? r.doorX : -r.doorX);
@@ -356,10 +356,12 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.fridge(ctx, w / 2 - 0.9, back + 0.55);
       F.island(ctx, -0.3, -0.5, 2.4);
       F.roundTable(ctx, -w / 2 + 1.5, 2.1, 0.55, 3);
-      if (w >= F.INTERVIEW_MIN_W) F.interviewSet(ctx);
-      else F.roundTable(ctx, w / 2 - 1.5, 2.0, 0.55, 3);
+      F.roundTable(ctx, w / 2 - 1.5, 2.0, 0.55, 3);
       F.vending(ctx, -w / 2 + 0.7, back + 0.55);
       F.plant(ctx, -w / 2 + 0.6, 0.4, 1.0);
+      break;
+    case 'interview':
+      if (w >= F.INTERVIEW_MIN_W) F.interviewRoom(ctx, w);
       break;
     case 'meeting':
       F.screenWall(ctx, 0, back + 0.4);
@@ -377,6 +379,7 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.beanbag(ctx, w / 2 - 1.0, 2.2, P.sofa[3]);
       F.beanbag(ctx, w / 2 - 2.0, 2.7, P.sofa[2]);
       F.bookshelf(ctx, -w / 2 + 0.3, -1.0, Math.PI / 2, 1.8);
+      if (w >= F.NEWHIRE_MIN_W) F.newHireBench(ctx);
       F.plant(ctx, w / 2 - 0.6, back + 0.6, 1.1);
       F.plant(ctx, -w / 2 + 0.6, back + 0.6, 1.1);
       break;

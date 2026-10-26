@@ -21,6 +21,7 @@ import { drawCat, HEAD_TOP } from './cat';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle } from './draw';
+import { NEWHIRE_MIN_W } from './furniture';
 import { Npcs } from './npcs';
 import { PALETTES2D, type ThemeName } from './palette2d';
 import { drawScene, ELEV, sceneBounds, sceneKey, type Rect4, type SceneData } from './scene';
@@ -399,7 +400,7 @@ export class World2D implements FloorWorld {
       { x: 1.6, z: 1.2, sit: false },
       { x: -1.0, z: 2.4, sit: false },
       { x: 1.4, z: 2.6, sit: false },
-    ];
+    ].filter((p) => !(w >= NEWHIRE_MIN_W && p.z > 0.9 && p.x > -0.5)); // the new hires wait on the bench in the east half
     const slot = this.takeSlot(this.slots.lounge, id, spots.length - 1);
     const spot = spots[Math.min(slot, spots.length - 1)];
     // In west of the TV to the aisle between the TV and the coffee table; the sofa is reached round the table.

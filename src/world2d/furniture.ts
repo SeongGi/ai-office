@@ -1,6 +1,7 @@
 // Static furniture, drawn in a local frame (metres). Top-down shapes with soft outlines.
 import { darken, lighten, mix } from './color';
 import { circle, ellipse, item, rbox, shape, style, text } from './draw';
+import { OFFICE_D } from '../world/layout';
 import { PALETTES2D, type Palette2D } from './palette2d';
 
 type Ctx = CanvasRenderingContext2D;
@@ -196,23 +197,38 @@ export function reception(ctx: Ctx, x: number, y: number, w: number) {
   rbox(ctx, x + w * 0.2, y - 0.12, 0.5, 0.26, '#3a3f55', 0.06, { shadow: false, lw: 0.025 });
 }
 
-/** Kitchen interview corner, kitchen-local metres: the table and where each cat sits. Needs a kitchen at least this wide. */
-export const INTERVIEW_MIN_W = 7.0;
+/** The interview room (면접실) is built for this width; narrower and the cats are left out. Room-local metres. */
+export const INTERVIEW_MIN_W = 4.8;
 export const INTERVIEW = {
-  table: { x: 2.1, z: 3.35 },
-  boss: { x: 3.0, z: 3.5 },
-  candidate: { x: 1.2, z: 3.5 },
-  waiting: [{ x: -1.5, z: 3.5 }],
+  table: { x: 0, z: -0.45 },
+  boss: { x: -1.6, z: -0.35 },
+  candidate: { x: 1.6, z: -0.35 },
 };
 
-/** A small table with the interviewer and the candidate on stools either side of it, and a stool across the lane for the candidate who waits. */
-export function interviewSet(ctx: Ctx) {
+/** A small table with the interviewer and the candidate on stools either side of it, a board on the wall and a plant. */
+export function interviewRoom(ctx: Ctx, w: number) {
   const t = INTERVIEW;
-  for (const [i, s] of [t.boss, t.candidate, ...t.waiting].entries()) circle(ctx, s.x, s.z + 0.08, 0.2, P.chairs[(i + 1) % P.chairs.length]);
-  rbox(ctx, t.table.x, t.table.z, 0.85, 0.6, P.wood, 0.16);
-  rbox(ctx, t.table.x, t.table.z, 0.73, 0.48, lighten(P.wood, 0.3), 0.12, { shadow: false, lw: 0.02 });
-  rbox(ctx, t.table.x - 0.15, t.table.z + 0.02, 0.22, 0.3, '#ffffff', 0.03, { shadow: false, lw: 0.02 });
-  rbox(ctx, t.table.x + 0.18, t.table.z - 0.02, 0.2, 0.26, '#fff7e0', 0.03, { shadow: false, lw: 0.02 });
+  rug(ctx, 0, -0.4, 4.4, 2.8, P.dark ? '#4f4486' : '#ffe9c9');
+  whiteboard(ctx, 0, -OFFICE_D / 2 + 0.55, 0, '#ff8a5c');
+  for (const [i, s] of [t.boss, t.candidate].entries()) circle(ctx, s.x, s.z + 0.08, 0.2, P.chairs[(i + 1) % P.chairs.length]);
+  rbox(ctx, t.table.x, t.table.z, 1.3, 0.7, P.wood, 0.18);
+  rbox(ctx, t.table.x, t.table.z, 1.16, 0.56, lighten(P.wood, 0.3), 0.14, { shadow: false, lw: 0.02 });
+  rbox(ctx, t.table.x - 0.25, t.table.z + 0.02, 0.24, 0.32, '#ffffff', 0.03, { shadow: false, lw: 0.02 });
+  rbox(ctx, t.table.x + 0.28, t.table.z - 0.02, 0.22, 0.28, '#fff7e0', 0.03, { shadow: false, lw: 0.02 });
+  plant(ctx, w / 2 - 0.6, -OFFICE_D / 2 + 0.6, 1.1);
+  plant(ctx, -w / 2 + 0.6, OFFICE_D / 2 - 0.7, 1.1);
+}
+
+/** Lounge benches for the new hires who wait, lounge-local metres. Needs a lounge at least this wide. */
+export const NEWHIRE_MIN_W = 8.0;
+export const NEWHIRES = [
+  { x: 1.6, z: 2.2 },
+  { x: 3.4, z: 2.2 },
+];
+
+export function newHireBench(ctx: Ctx) {
+  rbox(ctx, 2.5, 2.36, 3.6, 0.5, P.woodLight, 0.2);
+  rbox(ctx, 2.5, 2.3, 3.4, 0.36, lighten(P.woodLight, 0.35), 0.16, { shadow: false, lw: 0.02 });
 }
 
 export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string) {

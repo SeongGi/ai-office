@@ -26,6 +26,7 @@ const LOBBY_W = 10;
 const KITCHEN_W = 7.5;
 const MEETING_W = 6.5;
 const LOUNGE_W = 9;
+const INTERVIEW_W = 5.6;
 export const LOBBY_WIDTH = LOBBY_W;
 export const BUILDING_X0 = -24;
 /** 로비 북쪽 벽에 붙은 엘리베이터 위치(월드). 문은 +Z(로비 안쪽)를 본다. */
@@ -72,7 +73,7 @@ export interface Rect {
   d: number;
 }
 
-export type AmenityKind = 'kitchen' | 'meeting' | 'lounge' | 'games' | 'booths';
+export type AmenityKind = 'kitchen' | 'meeting' | 'lounge' | 'games' | 'booths' | 'interview';
 
 export interface Amenity {
   kind: AmenityKind;
@@ -259,10 +260,11 @@ export function computeLayout(state: WorldState, book: SeatBook): BuildingLayout
   const amenities: { kind: AmenityKind; w: number; side: 'north' | 'south' }[] = [
     { kind: 'meeting', w: MEETING_W, side: 'north' },
     { kind: 'kitchen', w: KITCHEN_W, side: 'north' },
+    { kind: 'interview', w: INTERVIEW_W, side: 'south' },
     { kind: 'lounge', w: LOUNGE_W, side: 'south' },
   ];
   const lenN = wingLen.north + MEETING_W + KITCHEN_W;
-  const lenS = wingLen.south + LOUNGE_W;
+  const lenS = wingLen.south + INTERVIEW_W + LOUNGE_W;
   const wingLength = Math.max(lenN, lenS);
   const pad = (gap: number): AmenityKind => (gap > 5.5 ? 'games' : 'booths');
   if (lenS < lenN - 0.01) amenities.splice(2, 0, { kind: pad(lenN - lenS), w: lenN - lenS, side: 'south' });
