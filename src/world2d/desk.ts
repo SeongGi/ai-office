@@ -1,5 +1,6 @@
 // A desk with a glowing monitor, and the chair. Both are drawn per agent every frame.
 import type { Status } from '../../shared/protocol';
+import { MONITOR_COLORS, SCROLL_ROWS_PER_SEC, toolHue } from '../../shared/monitor';
 import { darken, lighten, mix, rgba } from './color';
 import { circle, ellipse, item, rbox, shape } from './draw';
 import { PALETTES2D, STATUS_COLORS, hash, type ThemeName } from './palette2d';
@@ -18,6 +19,10 @@ export interface DeskView {
   fx: number;
   fz: number;
   status: Status;
+  /** Last tool name; picks the colour of the code lines. */
+  tool?: string;
+  /** Crowded or reduced motion: draw a static frame. */
+  still?: boolean;
 }
 
 const MUGS = ['#ff9eb5', '#8ec9ff', '#ffd27a', '#a6e3b5', '#c3a6ff'];
@@ -35,10 +40,12 @@ export function drawChair(ctx: Ctx, d: DeskView, theme: ThemeName) {
   });
 }
 
-function screenColors(status: Status, dark: boolean) {
+function screenColors(status: Status, dark: boolean, hue: string) {
   const base = STATUS_COLORS[status];
   if (status === 'offline') return { fill: '#2b3042', line: '#555d78', glow: 0 };
-  if (status === 'idle') return { fill: mix(base, dark ? '#202640' : '#ffffff', 0.45), line: lighten(base, 0.5), glow: 0.12 };
+  if (status === 'working') return { fill: '#161d2b', line: hue, glow: 0.4 };
+  if (status === 'thinking' || status === 'waiting') return { fill: '#161d2b', line: base, glow: 0.35 };
+  if (status === 'idle' || status === 'done') return { fill: mix(base, dark ? '#202640' : '#ffffff', 0.45), line: lighten(base, 0.5), glow: 0.12 };
   return { fill: lighten(base, 0.05), line: '#ffffff', glow: 0.5 };
 }
 
@@ -48,7 +55,9 @@ export function drawDesk(ctx: Ctx, d: DeskView, t: number, theme: ThemeName) {
   const [cx, cz] = deskCenter(d);
   const ang = Math.atan2(-d.fx, d.fz);
   const h = hash(d.id);
-  const sc = screenColors(d.status, dark);
+  const hue = MONITOR_COLORS[toolHue(d.tool)];
+  const sc = screenColors(d.status, dark, hue);
+  if (d.still) t = 0;
   item(ctx, cx, cz, ang, () => {
     rbox(ctx, 0, 0, DESK_W, DESK_D, P.wood, 0.17, { lw: 0.055 });
     rbox(ctx, 0, 0, DESK_W - 0.14, DESK_D - 0.14, lighten(P.wood, 0.28), 0.12, { shadow: false, lw: 0.02 });
@@ -82,36 +91,44 @@ export function drawDesk(ctx: Ctx, d: DeskView, t: number, theme: ThemeName) {
   ctx.lineWidth = 0.04;
   ctx.beginPath();
   if (d.status === 'working') {
-    const o = (t * 0.6) % 1;
+    // Rows step slowly upward; each row length and indent come from its running number, so the lines read as code.
+    const n = Math.floor(t * SCROLL_ROWS_PER_SEC);
+    ctx.lineWidth = 0.05;
     for (let i = 0; i < 4; i++) {
+      const r = n + i;
       const y = pc - 0.14 + i * 0.095;
-      const len = 0.2 + 0.28 * Math.abs(Math.sin((o + i * 0.27) * Math.PI * 2));
-      ctx.moveTo(mx - 0.3, y);
-      ctx.lineTo(mx - 0.3 + len, y);
+      const x0 = mx - 0.3 + ((r * 7 + h) % 3) * 0.06;
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x0 + 0.14 + ((r * 13 + h) % 5) * 0.07, y);
     }
   } else if (d.status === 'thinking') {
-    ctx.lineWidth = 0.09 + Math.max(0, Math.sin(t * 5)) * 0.03;
+    // Slow pulse, one dot after the other.
     for (let i = 0; i < 3; i++) {
+      ctx.lineWidth = 0.07 + Math.max(0, Math.sin(t * 3 - i * 0.8)) * 0.05;
       ctx.moveTo(mx - 0.18 + i * 0.18, pc);
       ctx.lineTo(mx - 0.18 + i * 0.18 + 0.001, pc);
+      ctx.stroke();
+      ctx.beginPath();
     }
   } else if (d.status === 'waiting') {
-    ctx.lineWidth = 0.07;
-    ctx.moveTo(mx, pc - 0.14);
-    ctx.lineTo(mx, pc + 0.03);
-    ctx.moveTo(mx, pc + 0.12);
-    ctx.lineTo(mx + 0.001, pc + 0.12);
+    // One blinking cursor.
+    if (d.still || t % 1.2 < 0.7) {
+      ctx.lineWidth = 0.07;
+      ctx.moveTo(mx - 0.1, pc - 0.1);
+      ctx.lineTo(mx - 0.1, pc + 0.1);
+    }
   } else if (d.status === 'done') {
     ctx.lineWidth = 0.07;
     ctx.moveTo(mx - 0.14, pc);
     ctx.lineTo(mx - 0.04, pc + 0.1);
     ctx.lineTo(mx + 0.16, pc - 0.1);
   } else if (d.status === 'error') {
+    // A small '!' on the red screen.
     ctx.lineWidth = 0.07;
-    ctx.moveTo(mx - 0.1, pc - 0.1);
-    ctx.lineTo(mx + 0.1, pc + 0.1);
-    ctx.moveTo(mx + 0.1, pc - 0.1);
-    ctx.lineTo(mx - 0.1, pc + 0.1);
+    ctx.moveTo(mx, pc - 0.12);
+    ctx.lineTo(mx, pc + 0.02);
+    ctx.moveTo(mx, pc + 0.12);
+    ctx.lineTo(mx + 0.001, pc + 0.12);
   } else if (d.status === 'idle') {
     ctx.moveTo(mx - 0.3, pc - 0.08);
     ctx.lineTo(mx + 0.1, pc - 0.08);

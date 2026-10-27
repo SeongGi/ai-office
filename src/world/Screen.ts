@@ -4,6 +4,8 @@ import { STATUS_COLORS } from './palette';
 import { STATUS_LABEL_KO as STATUS_LABEL } from '../ui/labels';
 import { fit, makeCanvas, MONO_FONT, roundRect, UI_FONT, wrap } from './text';
 import { REC } from './quality';
+import { effectiveStatus } from '../../shared/places';
+import { MONITOR_COLORS, SCROLL_ROWS_PER_SEC, screenMode, toolHue } from '../../shared/monitor';
 
 const RES = REC ? 2 : 1;
 
@@ -34,26 +36,37 @@ export class Screen {
     this.seed = seed;
   }
 
-  update(agent: Agent, time: number, dark: boolean) {
-    const animated = agent.status === 'working' || agent.status === 'thinking';
-    const key = `${agent.status}|${agent.tool}|${agent.activity}|${dark}`;
+  /** `still`: crowded or reduced motion, so draw one static frame per state and never tick. */
+  update(agent: Agent, time: number, dark: boolean, still = false) {
+    const status = effectiveStatus(agent, Date.now());
+    const mode = screenMode(status);
+    const animated = !still && (mode === 'code' || mode === 'dots' || mode === 'cursor');
+    const key = `${status}|${agent.tool}|${agent.lastTool}|${agent.activity}|${dark}|${still}`;
     if (key === this.key && !(animated && time - this.lastTick > 0.14)) return;
     this.key = key;
     this.lastTick = time;
-    if (agent.status === 'working') this.scroll += 1;
-    this.draw(agent, time);
+    this.scroll = still ? 0 : Math.floor(time * SCROLL_ROWS_PER_SEC);
+    this.draw(agent, status, still ? 0 : time, still);
   }
 
-  private draw(agent: Agent, time: number) {
+  private draw(agent: Agent, status: Status, time: number, still: boolean) {
     const c = this.ctx;
-    const status: Status = agent.status;
     const color = STATUS_COLORS[status];
+    const hue = MONITOR_COLORS[toolHue(agent.lastTool ?? agent.tool)];
 
-    c.fillStyle = status === 'error' ? '#2a0f12' : status === 'waiting' ? '#2a1f0b' : '#0d1117';
+    if (status === 'offline') {
+      c.fillStyle = '#05070a';
+      c.fillRect(0, 0, W, H);
+      this.texture.needsUpdate = true;
+      return;
+    }
+    c.fillStyle = status === 'error' ? '#5a1218' : status === 'waiting' ? '#2a1f0b' : '#0d1117';
     c.fillRect(0, 0, W, H);
 
-    if (status === 'idle' || status === 'offline' || status === 'done') {
+    if (status === 'idle' || status === 'done') {
       this.drawRest(status, color, time);
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      c.fillRect(0, 0, W, H);
       this.texture.needsUpdate = true;
       return;
     }
@@ -61,7 +74,7 @@ export class Screen {
     // Title bar: tool + status
     c.fillStyle = '#161b22';
     c.fillRect(0, 0, W, 54);
-    c.fillStyle = color;
+    c.fillStyle = status === 'working' ? hue : color;
     roundRect(c, 20, 17, 20, 20, 6);
     c.fill();
     c.font = `600 24px ${UI_FONT}`;
@@ -83,10 +96,10 @@ export class Screen {
     // Body: code scroll while working, pulsing dots while thinking, banner when waiting/error
     const top = 90 + lines.length * 34 + 8;
     if (status === 'working') {
-      this.drawCode(top);
+      this.drawCode(top, hue);
     } else if (status === 'thinking') {
       for (let i = 0; i < 3; i++) {
-        const a = 0.35 + 0.65 * Math.max(0, Math.sin(time * 4 - i * 0.7));
+        const a = 0.35 + 0.65 * Math.max(0, Math.sin(time * 3 - i * 0.8));
         c.globalAlpha = a;
         c.fillStyle = color;
         c.beginPath();
@@ -98,13 +111,15 @@ export class Screen {
       c.fillStyle = color;
       c.font = `700 30px ${UI_FONT}`;
       c.textAlign = 'center';
-      c.fillText(status === 'waiting' ? '도움이 필요해요' : '문제가 생겼어요', W / 2, top + (H - top) / 2);
+      c.fillText(status === 'waiting' ? '도움이 필요해요' : '! 문제가 생겼어요', W / 2, top + (H - top) / 2);
       c.textAlign = 'left';
+      // Waiting: one blinking cursor under the text
+      if (status === 'waiting' && (still || time % 1.2 < 0.7)) c.fillRect(W / 2 - 5, top + (H - top) / 2 + 28, 10, 22);
     }
     this.texture.needsUpdate = true;
   }
 
-  private drawCode(top: number) {
+  private drawCode(top: number, hue: string) {
     const c = this.ctx;
     const lineH = 20;
     const rows = Math.floor((H - top - 10) / lineH);
@@ -115,7 +130,7 @@ export class Screen {
       for (let p = 0; p < pieces; p++) {
         const w = 24 + ((n * 31 + p * 17 + this.seed) % 90);
         if (x + w > W - 20) break;
-        c.fillStyle = CODE[(n * 5 + p * 3 + this.seed) % CODE.length];
+        c.fillStyle = (n * 5 + p * 3 + this.seed) % 3 === 0 ? CODE[(n + p + this.seed) % CODE.length] : hue;
         c.globalAlpha = 0.85;
         roundRect(c, x, top + r * lineH + 4, w, 10, 4);
         c.fill();

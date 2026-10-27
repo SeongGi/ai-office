@@ -918,7 +918,7 @@ export class World2D implements FloorWorld {
       if (a.mode === 'gone') continue;
       const agent = state.agents[a.id];
       if (a.seat && agent) {
-        const d: DeskView = { id: a.id, seatX: a.seat.x, seatZ: a.seat.z, fx: a.seat.fx, fz: a.seat.fz, status: agent.status };
+        const d: DeskView = { id: a.id, seatX: a.seat.x, seatZ: a.seat.z, fx: a.seat.fx, fz: a.seat.fz, status: effectiveStatus(agent, Date.now()), tool: agent.lastTool ?? agent.tool, still: this.reduced || this.crowded };
         desks.push(d);
         items.push({ y: deskCenter(d)[1], kind: 1, d });
       }

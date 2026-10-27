@@ -863,7 +863,7 @@ export class World {
         // Monitors are canvas textures: only redraw the ones you can actually read.
         const near = this.screenBudget > 0 && this.isNear(s.character.root);
         if (near) this.screenBudget--;
-        s.desk.update(dt, this.elapsed, agent, dark, s.character.isSeated(), s.character.root.rotation.y, near);
+        s.desk.update(dt, this.elapsed, agent, dark, s.character.isSeated(), s.character.root.rotation.y, near, this.reduced || this.crowded);
       }
     }
     let elevatorNear = false;
