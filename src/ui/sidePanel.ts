@@ -1,0 +1,108 @@
+import type { WorldState } from '../../shared/protocol';
+import { buildRows, createTally, observeTools, TOOL_CLASSES, type ToolClass } from '../../shared/sidepanel';
+import { teamAccent } from '../world/palette';
+
+const STORE_KEY = 'agent-floor.sidePanel';
+const NARROW_PX = 900;
+
+export const PANEL_KO = {
+  title: '오늘의 사무실',
+  tools: '도구 사용 횟수',
+  timeline: '최근 활동',
+  empty: '아직 활동이 없어요',
+  toggle: '오늘의 사무실 열고 닫기',
+};
+
+const TOOL_KO: Record<ToolClass, string> = { library: '자료실', server: '서버실', search: '정보검색실', other: '기타' };
+
+function esc(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+function loadOpen(): boolean {
+  try {
+    const v = localStorage.getItem(STORE_KEY);
+    if (v === '1') return true;
+    if (v === '0') return false;
+  } catch {
+    // 저장소를 못 읽으면 화면 너비로 정한다.
+  }
+  return window.innerWidth >= NARROW_PX;
+}
+
+/** 오른쪽 접이식 패널. 상태 갱신마다 도구 횟수만 세고, 그리기는 1초에 한 번만 한다. */
+export class SidePanel {
+  readonly root = document.createElement('aside');
+  private tally = createTally();
+  private state: WorldState | null = null;
+  private toolsBox = document.createElement('div');
+  private list = document.createElement('ol');
+  private key = '';
+  private open: boolean;
+
+  constructor(private onSelect: (id: string) => void, private onToggle: (open: boolean) => void) {
+    this.root.className = 'side-panel glass';
+    this.root.setAttribute('aria-label', PANEL_KO.title);
+    this.toolsBox.className = 'sp-tools';
+    this.list.className = 'sp-list';
+    this.root.innerHTML = `<h2>${PANEL_KO.title}</h2><h3>${PANEL_KO.tools}</h3>`;
+    const h = document.createElement('h3');
+    h.textContent = PANEL_KO.timeline;
+    this.root.append(this.toolsBox, h, this.list);
+    this.list.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
+      if (b?.dataset.id) this.onSelect(b.dataset.id);
+    });
+    this.open = loadOpen();
+    this.apply();
+    window.setInterval(() => this.render(), 1000);
+  }
+
+  isOpen() {
+    return this.open;
+  }
+
+  toggle() {
+    this.open = !this.open;
+    try {
+      localStorage.setItem(STORE_KEY, this.open ? '1' : '0');
+    } catch {
+      // 저장하지 못해도 이번 화면에서는 바뀐다.
+    }
+    this.apply();
+    this.render();
+  }
+
+  private apply() {
+    this.root.classList.toggle('show', this.open);
+    this.onToggle(this.open);
+  }
+
+  /** 상태가 바뀔 때마다 부른다. 세기만 하고 그리지는 않는다. */
+  observe(state: WorldState) {
+    this.state = state;
+    observeTools(this.tally, state.agents);
+    if (!this.key) this.render();
+  }
+
+  private render() {
+    if (!this.open || !this.state) return;
+    const counts = this.tally.counts;
+    const rows = buildRows(this.state, Date.now());
+    const key = TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
+    if (key === this.key) return;
+    this.key = key;
+    const max = Math.max(1, ...TOOL_CLASSES.map((c) => counts[c]));
+    this.toolsBox.innerHTML = TOOL_CLASSES.map(
+      (c) => `<div class="sp-tool"><span class="sp-tool-name">${TOOL_KO[c]}</span><span class="sp-bar"><i style="width:${Math.round((counts[c] / max) * 100)}%"></i></span><b>${counts[c]}</b></div>`,
+    ).join('');
+    this.list.innerHTML = rows.length
+      ? rows
+          .map(
+            (r) =>
+              `<li><button type="button" data-id="${esc(r.agentId)}"><span class="sp-dot" style="background:${teamAccent(r.hue).getStyle()}"></span><span class="sp-main"><span class="sp-who">${esc(r.name)}</span><span class="sp-text">${esc(r.text)}</span></span><time>${r.rel}</time></button></li>`,
+          )
+          .join('')
+      : `<li class="sp-empty">${PANEL_KO.empty}</li>`;
+  }
+}

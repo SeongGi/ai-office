@@ -159,6 +159,7 @@ button {
 .teams,
 .card,
 .empty,
+.side-panel,
 .hint {
   z-index: 5;
 }
@@ -1163,6 +1164,144 @@ button {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+/* ---------------------------------------------------------------- side panel */
+
+.side-panel {
+  position: absolute;
+  right: 16px;
+  top: calc(max(16px, env(safe-area-inset-top)) + 58px);
+  width: 280px;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: var(--radius-panel);
+  color: var(--text);
+  display: none;
+}
+
+.side-panel.show {
+  display: block;
+}
+
+/* 직원 카드가 열려 있으면 카드 왼쪽으로 비킨다. */
+.hud.has-card .side-panel {
+  right: 372px;
+}
+
+.side-panel h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.side-panel h3 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.sp-tool {
+  display: grid;
+  grid-template-columns: 62px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.sp-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.sp-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.sp-tool b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sp-list button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sp-list button:hover {
+  background: var(--fill);
+}
+
+.sp-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+}
+
+.sp-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-who {
+  font-weight: 600;
+}
+
+.sp-text {
+  overflow-wrap: anywhere;
+  color: var(--text-2, var(--text));
+}
+
+.sp-list time {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.sp-empty {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+@media (max-width: 767px) {
+  .side-panel {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-height: 40dvh;
+  }
+
+  .hud.has-card .side-panel {
+    right: 16px;
+    display: none;
   }
 }
 

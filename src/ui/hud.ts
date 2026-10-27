@@ -8,6 +8,7 @@ import { controlAllowed, dismissAgent, renameAgent, sendInstruction } from '../c
 import pencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw';
 import { icon } from './icons';
 import { REPO_URL } from '../config';
+import { PANEL_KO, SidePanel } from './sidePanel';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string) {
   const e = document.createElement(tag);
@@ -130,6 +131,8 @@ export class Hud {
   private card = el('aside', 'card glass');
   private sheet = el('div', 'sheet-wrap');
   private empty = el('div', 'empty glass');
+  private panel: SidePanel;
+  private panelBtn: HTMLButtonElement;
   private themeBtn: HTMLButtonElement;
   private teamsKey = '';
   private cardKey = '';
@@ -168,6 +171,7 @@ export class Hud {
       tools.append(b);
       return b;
     };
+    this.panelBtn = btn('listBullets', PANEL_KO.toggle, () => this.panel.toggle());
     btn('cornersOut', '모두 보기 (F)', () => actions.frameAll());
     this.themeBtn = btn('moon', '테마 바꾸기 (T)', () => actions.toggleTheme());
     btn('plug', '에이전트 연결하기', () => this.openSheet());
@@ -199,9 +203,16 @@ export class Hud {
     emptyActions.append(e1, e2);
     this.empty.append(emptyActions);
 
+    this.panel = new SidePanel(
+      (id) => actions.select(id),
+      (open) => {
+        this.panelBtn.setAttribute('aria-pressed', String(open));
+        this.root.classList.toggle('panel-open', open);
+      },
+    );
     this.card.setAttribute('aria-live', 'polite');
     this.buildSheet();
-    this.root.append(top, this.demoNote, this.teamsDock, this.card, this.empty, hint, this.sheet);
+    this.root.append(top, this.demoNote, this.teamsDock, this.panel.root, this.card, this.empty, hint, this.sheet);
     container.append(this.root);
 
     this.bindKeys();
@@ -227,6 +238,8 @@ export class Hud {
   setState(state: WorldState, selected: string | null) {
     this.state = state;
     this.selected = selected;
+    this.panel.observe(state);
+    this.root.classList.toggle('has-card', Boolean(selected && state.agents[selected]));
     this.renderTeams();
     this.renderCard();
     this.updateEmpty();
