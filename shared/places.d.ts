@@ -36,3 +36,11 @@ export function effectiveStatus(agent: Agent, nowMs: number): Agent['status'];
 export function failureTool(agent: Agent): string;
 export function thinkingText(activity: string | undefined | null): string;
 export function bubbleLines(text: string): [string, string];
+
+export const CELEBRATE_MS: number;
+export const CELEBRATE_GAP_MS: number;
+export interface CelebrateState {
+  at: number | null;
+}
+export function createCelebrateState(): CelebrateState;
+export function shouldCelebrate(st: CelebrateState, prev: Agent['status'], next: Agent['status'], nowMs: number): boolean;

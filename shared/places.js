@@ -121,6 +121,32 @@ export function initialToolState(agent, nowMs) {
   return st;
 }
 
+// ---------------------------------------------------------------- celebration
+
+/** How long a cat celebrates the end of a task. */
+export const CELEBRATE_MS = 1_600;
+/** One celebration per cat in this time, however often its status flips. */
+export const CELEBRATE_GAP_MS = 10_000;
+
+const BUSY = new Set(['working', 'thinking']);
+
+/** Per cat memory for the rate limit. Plain data. */
+export function createCelebrateState() {
+  return { at: null };
+}
+
+/**
+ * True when a live status change ends a task (working or thinking, then idle or done) and the cat has not
+ * celebrated in the last CELEBRATE_GAP_MS. Records the time when it answers true.
+ * A cat first drawn on page load starts as idle, so that first status never counts.
+ */
+export function shouldCelebrate(st, prev, next, nowMs) {
+  if (!BUSY.has(prev) || (next !== 'idle' && next !== 'done')) return false;
+  if (st.at !== null && nowMs - st.at < CELEBRATE_GAP_MS) return false;
+  st.at = nowMs;
+  return true;
+}
+
 // ---------------------------------------------------------------- bubbles
 
 /** A failed tool shows as 'error' with this activity prefix; the renderers treat it as a short red bubble, not a lasting error. */

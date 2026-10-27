@@ -1,5 +1,6 @@
 // One agent: where the cat is, what it is doing, and how it moves. Mirrors src/world/Character.ts.
 import type { Agent, Status } from '../../shared/protocol';
+import { CELEBRATE_MS, createCelebrateState, shouldCelebrate } from '../../shared/places';
 import { CORRIDOR } from '../world/layout';
 import { damp } from '../world/motion';
 import type { CatAct, CatView } from './cat';
@@ -26,6 +27,7 @@ export type Mode = 'walking' | 'seated' | 'standing' | 'leaving' | 'gone';
 
 const WALK_SPEED = 2.0;
 const HALL = CORRIDOR / 2 - 0.1;
+export const PARTY_S = CELEBRATE_MS / 1000;
 
 /** In the corridor, where nothing stands between two points. */
 const inHall = (p: P) => Math.abs(p.z) <= HALL;
@@ -77,6 +79,9 @@ export class Agent2D implements CatView {
   /** Which failure event the red bubble was started for (the agent's lastSeen). */
   failKey = -1;
   talk = 0;
+  /** Seconds left of the task done celebration (PARTY_S at the start, 0 = none) and the raised arms it asks for (0..1). */
+  party = 0;
+  partyArms = 0;
   alpha = 1;
   atDesk = true;
   readonly fur: string;
@@ -98,6 +103,7 @@ export class Agent2D implements CatView {
   private awaySit = false;
   private awayLook = 0;
   private hopV = 0;
+  private partyRate = createCelebrateState();
   private wantSelected = false;
   private wantHover = false;
   private onGone: (() => void) | null = null;
@@ -353,6 +359,7 @@ export class Agent2D implements CatView {
     this.status = status;
     if (status === 'done' && prev !== 'done') this.hopV = 3.3;
     if (status === 'error' && prev !== 'error') this.shake = 1;
+    if (shouldCelebrate(this.partyRate, prev, status, performance.now())) this.party = PARTY_S;
   }
 
   setSelected(on: boolean) {
@@ -428,6 +435,17 @@ export class Agent2D implements CatView {
         this.hop = 0;
         this.hopV = 0;
       }
+    }
+    if (this.party > 0) {
+      const was = this.party;
+      this.party = Math.max(0, was - dt);
+      // Reduced motion: no hops and no raised arms, World2D shows a small check bubble instead.
+      if (reduced) this.partyArms = 0;
+      else {
+        if (was === PARTY_S || (was > 0.8 && this.party <= 0.8)) this.kick(3.1);
+        this.partyArms = Math.min(1, (PARTY_S - this.party) / 0.15, this.party / 0.3);
+      }
+      if (this.party === 0) this.act.cheer = 0;
     }
     this.shake = Math.max(0, this.shake - dt * 1.1);
     this.talk = Math.max(0, this.talk - dt);

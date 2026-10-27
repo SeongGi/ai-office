@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { breakPlace, desiredPlace, idleAgeMs, initialPlace, LOUNGE_AFTER_MS } from '../shared/places.js';
+import { breakPlace, CELEBRATE_GAP_MS, createCelebrateState, desiredPlace, idleAgeMs, initialPlace, LOUNGE_AFTER_MS, shouldCelebrate } from '../shared/places.js';
 
 const a = (id, status, parent) => ({ id, status, parent });
 const world = (...list) => Object.fromEntries(list.map((x) => [x.id, x]));
@@ -259,4 +259,24 @@ test('bubbleLines: short text stays on one line, long text breaks at a space or 
   assert.deepEqual(bubbleLines('생각 중'), ['생각 중', '']);
   assert.deepEqual(bubbleLines('코드 구조를 살펴보는 중입니다…'), ['코드 구조를 살펴보는', '중입니다…']);
   assert.deepEqual(bubbleLines('가'.repeat(16) + '…'), ['가'.repeat(9), '가'.repeat(7) + '…']);
+});
+
+test('celebration: only a busy to idle or done change counts', () => {
+  const st = createCelebrateState();
+  assert.equal(shouldCelebrate(st, 'idle', 'done', 0), false, 'first status of a cat that loaded with the page');
+  assert.equal(shouldCelebrate(st, 'idle', 'working', 0), false);
+  assert.equal(shouldCelebrate(st, 'waiting', 'idle', 0), false);
+  assert.equal(shouldCelebrate(st, 'error', 'done', 0), false);
+  assert.equal(shouldCelebrate(st, 'working', 'thinking', 0), false);
+  assert.equal(shouldCelebrate(st, 'working', 'offline', 0), false);
+  assert.equal(shouldCelebrate(st, 'working', 'idle', 0), true);
+});
+
+test('celebration: at most one per cat in CELEBRATE_GAP_MS, cats are independent', () => {
+  const a = createCelebrateState();
+  const b = createCelebrateState();
+  assert.equal(shouldCelebrate(a, 'thinking', 'done', 5000), true);
+  assert.equal(shouldCelebrate(a, 'working', 'idle', 5000 + CELEBRATE_GAP_MS - 1), false);
+  assert.equal(shouldCelebrate(b, 'working', 'idle', 5001), true);
+  assert.equal(shouldCelebrate(a, 'working', 'idle', 5000 + CELEBRATE_GAP_MS), true);
 });

@@ -436,7 +436,8 @@ export class World {
       // After a failure the old activity is the failure text; say nothing about it again.
       const text = thinkingText(isToolFailure({ ...agent, status: 'error' }) ? '' : agent.activity);
       s.character.setBubble(1, text, '', !this.reduced && !this.crowded);
-    } else s.character.setBubble(0, '', '', false);
+    } else if (this.reduced && s.character.celebrating()) s.character.setBubble(1, '✓', '', true);
+    else s.character.setBubble(0, '', '', false);
   }
 
   /** Once a second: expire failure statuses, show or hide bubbles when the scene is crowded, light the server racks. */

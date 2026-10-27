@@ -4,13 +4,15 @@ import type { Agent, Status } from '../../shared/protocol';
 import { clay, G } from './materials';
 import { catFurFor, looksFor, shirtFor, STATUS_COLORS } from './palette';
 import type { Seat } from './layout';
-import { bubbleLines } from '../../shared/places';
+import { bubbleLines, CELEBRATE_MS, createCelebrateState, shouldCelebrate } from '../../shared/places';
 import { makeCanvas, UI_FONT } from './text';
 import { Spring, damp, dampAngle } from './motion';
 
 const SEAT_H = 0.5;
 const STAND_H = 0.66;
 const WALK_SPEED = 1.7;
+const PARTY_S = CELEBRATE_MS / 1000;
+const PARTY_N = 8;
 
 type Mode = 'walking' | 'seated' | 'standing' | 'leaving' | 'gone';
 
@@ -56,6 +58,36 @@ function badge(kind: 'waiting' | 'error' | 'done' | 'thinking') {
   }
   m = new SpriteMaterial({ map: texture, depthWrite: false, transparent: true });
   badgeCache.set(kind, m);
+  return m;
+}
+
+// ---------------------------------------------------------------- celebration
+// Three shared sprite materials (star, pink dot, blue dot) for the burst over a cat that finished a task.
+// Shared by every cat and kept for the page's life, like the badges.
+const partyMats: SpriteMaterial[] = [];
+function partyMat(i: number) {
+  const kind = i % 3;
+  let m = partyMats[kind];
+  if (m) return m;
+  const { ctx, texture } = makeCanvas(64, 64);
+  ctx.fillStyle = ['#ffd23f', '#ff7a9a', '#5ec8ff'][kind];
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (kind === 0) {
+    for (let j = 0; j < 10; j++) {
+      const a = -Math.PI / 2 + (j * Math.PI) / 5;
+      const r = j % 2 ? 12 : 26;
+      if (j) ctx.lineTo(32 + Math.cos(a) * r, 34 + Math.sin(a) * r);
+      else ctx.moveTo(32 + Math.cos(a) * r, 34 + Math.sin(a) * r);
+    }
+    ctx.closePath();
+  } else ctx.arc(32, 32, 15, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fill();
+  m = new SpriteMaterial({ map: texture, depthWrite: false, transparent: true });
+  partyMats[kind] = m;
   return m;
 }
 
@@ -230,6 +262,10 @@ export class Character {
   private fade = new Spring(1, { response: 0.4, damping: 1 });
   private hop = new Spring(0, { response: 0.28, damping: 0.45 });
   private shake = 0;
+  /** Seconds left of the task done celebration (0 = none), its rate limit, and the pooled burst sprites (made on first use). */
+  private party = 0;
+  private partyRate = createCelebrateState();
+  private partyFx: Sprite[] | null = null;
   private hoverLift = new Spring(0, { response: 0.25, damping: 0.8 });
 
   mode: Mode = 'seated';
@@ -558,6 +594,7 @@ export class Character {
     this.statusMat.color.set(STATUS_COLORS[status]);
     if (status === 'done' && prev !== 'done') this.hop.velocity = 5.5;
     if (status === 'error' && prev !== 'error') this.shake = 1;
+    if (shouldCelebrate(this.partyRate, prev, status, performance.now())) this.party = PARTY_S;
     const kind = status === 'waiting' || status === 'error' || status === 'done' || status === 'thinking' ? status : null;
     if (kind !== this.badgeKind) {
       this.badgeKind = kind;
@@ -567,6 +604,11 @@ export class Character {
         this.badgeScale.target = kind === 'thinking' ? 0.34 : 0.44;
       } else this.badgeScale.target = 0;
     }
+  }
+
+  /** True while the task done celebration runs. */
+  celebrating() {
+    return this.party > 0;
   }
 
   setSelected(on: boolean) {
@@ -645,9 +687,16 @@ export class Character {
     // ---- posture
     const s = this.sitAmount;
     const base = STAND_H + (SEAT_H - STAND_H) * s;
+    const cheering = this.party > 0.25 && !reduced;
+    if (this.party > 0) {
+      const was = this.party;
+      this.party = Math.max(0, was - dt);
+      if (!reduced && (was === PARTY_S || (was > 0.8 && this.party <= 0.8))) this.hop.velocity = 5.5;
+    }
     this.hop.update(dt);
     const hop = Math.max(0, this.hop.value) * 0.25;
     this.body.position.y = base + hop;
+    this.updateParty(reduced, s, hop);
 
     const st = this.status;
     const working = st === 'working' && this.mode === 'seated';
@@ -675,6 +724,11 @@ export class Character {
     if (moving) {
       lx = -swing * 0.8;
       rx = swing * 0.8;
+    } else if (cheering) {
+      lx = 0.2 + Math.sin(t * 16 + this.phase) * 0.15;
+      rx = 0.2 + Math.sin(t * 16 + this.phase + 2.1) * 0.15;
+      lz = -2.6;
+      rz = 2.6;
     } else if (stand && this.workPose === 1) {
       lx = 1.05;
       rx = 1.05;
@@ -790,6 +844,34 @@ export class Character {
     const f = Math.min(1, Math.max(0, this.fade.value));
     this.root.scale.setScalar(0.6 + 0.4 * f);
     this.root.visible = f > 0.02;
+  }
+
+  /** Stars and dots rise from over the head, spread and fall back. Pooled sprites, nothing allocated per frame. */
+  private updateParty(reduced: boolean, sit: number, hop: number) {
+    if (this.party <= 0 || reduced) {
+      if (this.partyFx) for (const f of this.partyFx) f.visible = false;
+      return;
+    }
+    if (!this.partyFx) {
+      this.partyFx = [];
+      for (let i = 0; i < PARTY_N; i++) {
+        const f = new Sprite(partyMat(i));
+        f.renderOrder = 12;
+        f.visible = false;
+        this.root.add(f);
+        this.partyFx.push(f);
+      }
+    }
+    const p = 1 - this.party / PARTY_S;
+    const size = 0.2 * Math.min(1, (1 - p) * 3);
+    for (let i = 0; i < PARTY_N; i++) {
+      const f = this.partyFx[i];
+      const v = 0.75 + 0.25 * ((i * 5) % 3);
+      const rise = Math.sin(Math.min(1, p * 1.6) * Math.PI * 0.5) * (0.5 + 0.1 * (i % 3)) * v;
+      f.visible = size > 0.01;
+      f.scale.setScalar(size);
+      f.position.set(((i - 3.5) / 3.5) * (0.25 + p * 0.5), 1.7 + (1 - sit) * 0.14 + hop + rise - p * p * 0.5, ((i * 7) % 5 - 2) * 0.08);
+    }
   }
 
   isSeated() {

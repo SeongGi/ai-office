@@ -31,12 +31,12 @@ import {
 import { damp, prefersReducedMotion } from '../world/motion';
 import type { Anchor, WorldCallbacks } from '../world/World';
 import { BreakLife } from './activities';
-import { Agent2D, type P, type SeatW } from './agent2d';
+import { Agent2D, PARTY_S, type P, type SeatW } from './agent2d';
 import { BASE_PX, Camera2D, MIN_ZOOM } from './camera';
 import { drawCat, HEAD_TOP } from './cat';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
-import { circle, rbox, setStyle, text, textWidth } from './draw';
+import { circle, rbox, setStyle, star, text, textWidth } from './draw';
 import { drawServerLeds, NEWHIRE_MIN_W, TOOL_AISLE, toolSpots } from './furniture';
 import { Npcs } from './npcs';
 import { PALETTES2D, type ThemeName } from './palette2d';
@@ -59,6 +59,9 @@ interface Ripple {
 }
 
 const MEETING_CHAIRS = 8;
+
+/** Confetti colours of the task done burst. Module level so a frame allocates nothing. */
+const CONFETTI = ['#ffd23f', '#ff7a9a', '#5ec8ff', '#7ee08a', '#ffffff'];
 
 /** Where every office and shared room stands. Changes when the building is reshaped. */
 function shapeKey(plan: BuildingLayout) {
@@ -363,6 +366,12 @@ export class World2D implements FloorWorld {
         s.bubbleSub = '';
       }
       s.bubbleWant = this.reduced || this.crowded ? 0 : 1;
+    } else if (this.reduced && s.party > 0) {
+      // Reduced motion: no burst, only a small check bubble while the celebration lasts.
+      s.bubbleKind = 1;
+      s.bubbleText = '✓';
+      s.bubbleSub = '';
+      s.bubbleWant = 1;
     } else s.bubbleWant = 0;
   }
 
@@ -802,6 +811,8 @@ export class World2D implements FloorWorld {
       }
     }
     if (!this.reduced) this.life.update(dt, this.elapsed, this.agents, this.slots);
+    // After the break room life, which sets the arms of cats it owns: the celebration raises them on top.
+    for (const a of this.agents.values()) if (a.partyArms > 0) a.act.cheer = Math.max(a.act.cheer, a.partyArms);
     this.npcs.update(this.elapsed, this.elevOpen, this.reduced);
     this.elevOpen = damp(this.elevOpen, near ? 1 : 0, 5, dt);
     for (const l of this.letters) l.t += dt / 1.1;
@@ -950,6 +961,7 @@ export class World2D implements FloorWorld {
     }
 
     this.drawBubbles(ctx, t, k);
+    if (!this.reduced) this.drawParty(ctx, k);
 
     // letters and ripples
     for (const r of this.ripples) {
@@ -1009,6 +1021,41 @@ export class World2D implements FloorWorld {
       this.bubbleWidths.set(str, w);
     }
     return w;
+  }
+
+  /** Stars and confetti that burst over the head of a cat that just finished a task, and fall back. */
+  private drawParty(ctx: CanvasRenderingContext2D, k: number) {
+    for (const a of this.agents.values()) {
+      if (a.party <= 0 || a.mode === 'gone' || a.leaving) continue;
+      const p = 1 - a.party / PARTY_S;
+      const cx = a.x;
+      const cy = a.z + (-0.8 + 0.2 * a.sit) * k - a.hop - 0.6 * k;
+      ctx.save();
+      ctx.globalAlpha *= Math.min(1, (1 - p) * 3);
+      for (let i = 0; i < 8; i++) {
+        const dir = (i - 3.5) / 3.5;
+        const v = 0.75 + 0.25 * ((i * 5) % 3);
+        const x = cx + dir * (0.25 + p * 0.55) * k;
+        const y = cy - Math.sin(Math.min(1, p * 1.6) * Math.PI * 0.5) * (0.7 + 0.12 * (i % 3)) * v * k + p * p * 0.7 * k;
+        const color = CONFETTI[i % CONFETTI.length];
+        if (i % 3 === 0) {
+          star(ctx, x, y, 0.12 * k, p * 4 + i);
+          ctx.fillStyle = '#ffd23f';
+          ctx.fill();
+          ctx.lineWidth = 0.025 * k;
+          ctx.strokeStyle = '#f2a516';
+          ctx.stroke();
+        } else {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(p * 9 + i);
+          ctx.fillStyle = color;
+          ctx.fillRect(-0.05 * k, -0.025 * k, 0.1 * k, 0.05 * k);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
   }
 
   /** Thinking cloud and red failure bubble beside each cat's head (the name tags sit right above it). One per cat. */
