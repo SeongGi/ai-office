@@ -86,3 +86,6 @@ export function shortToolName(name) {
   if (typeof name === 'string' && name.startsWith('mcp__')) return 'MCP';
   return name;
 }
+
+/** 지시와 퇴사가 닿는 터미널 핸들: Orca(term_...) 또는 tmux 창(tmux:%N). */
+export const TERMINAL_HANDLE_RE = /^(term_[\w-]{8,64}|tmux:%\d{1,6})$/;

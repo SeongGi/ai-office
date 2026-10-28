@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TERMINAL_HANDLE_RE } from '../adapters/common.mjs';
 import { seedEvents } from '../adapters/seed.mjs';
 import { closeOrcaTerminal } from '../adapters/orca-close.mjs';
 import { sendOrcaPrompt } from '../adapters/orca-send.mjs';
@@ -283,7 +284,7 @@ export function startServer({
   try {
     const saved = JSON.parse(readFileSync(routesPath, 'utf8'));
     for (const [id, h] of Object.entries(saved?.terminals ?? {})) {
-      if (typeof h === 'string' && /^term_[\w-]{8,64}$/.test(h)) terminals.set(id.slice(0, 128), h);
+      if (typeof h === 'string' && TERMINAL_HANDLE_RE.test(h)) terminals.set(id.slice(0, 128), h);
     }
     for (const [id, d] of Object.entries(saved?.devices ?? {})) {
       if (typeof d === 'string' && d.length <= 48) devices.set(id.slice(0, 128), d);
@@ -320,7 +321,7 @@ export function startServer({
     // rename은 관리자 길(POST /rename)로만 만든다. 바깥 이벤트로는 받지 않는다.
     if (raw && raw.type === 'rename') return false;
     let routesChanged = false;
-    if (raw && typeof raw.agent === 'string' && typeof raw.terminal === 'string' && /^term_[\w-]{8,64}$/.test(raw.terminal)) {
+    if (raw && typeof raw.agent === 'string' && typeof raw.terminal === 'string' && TERMINAL_HANDLE_RE.test(raw.terminal)) {
       if (terminals.get(raw.agent) !== raw.terminal) routesChanged = true;
       terminals.set(raw.agent, raw.terminal);
     }

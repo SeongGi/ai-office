@@ -32,7 +32,12 @@ export function fromClaude(input, opts = {}) {
     ...(input.model ? { model: String(input.model) } : {}),
     ...(input.cwd ? { cwd: String(input.cwd) } : {}),
     // Orca 터미널 핸들. 퇴사 버튼이 이 세션을 닫을 때 서버가 쓴다(서버 메모리에만 둔다).
-    ...(process.env.ORCA_TERMINAL_HANDLE ? { terminal: process.env.ORCA_TERMINAL_HANDLE } : {}),
+    // Orca가 아니라 tmux 안에서 돌면 TMUX_PANE(%N)으로 대신한다.
+    ...(process.env.ORCA_TERMINAL_HANDLE
+      ? { terminal: process.env.ORCA_TERMINAL_HANDLE }
+      : /^%\d{1,6}$/.test(process.env.TMUX_PANE || '')
+        ? { terminal: 'tmux:' + process.env.TMUX_PANE }
+        : {}),
     // 어느 기기 세션인지. 서버가 닫기 요청을 그 기기로 보낼 때 쓴다(서버 메모리에만 둔다).
     ...(deviceName() ? { device: deviceName() } : {}),
     // 권한 모드(default, plan, bypassPermissions 등). 지시 보내기 안전장치가 쓴다.

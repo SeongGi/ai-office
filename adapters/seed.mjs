@@ -32,8 +32,17 @@ function handleOfPid(pid) {
   }
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 열려 있는 세션마다 세션 id -> 터미널 핸들. 훅이 한 번도 안 온 쉬는 세션도 지시와 퇴사가 닿게 한다. */
-function terminalsBySession(dir, handleOf) {
+function terminalsBySession(dir, handleOf, aliveOf) {
   const map = new Map();
   let names = [];
   try {
@@ -43,8 +52,14 @@ function terminalsBySession(dir, handleOf) {
   }
   for (const n of names) {
     try {
-      const { pid, sessionId } = JSON.parse(readFileSync(join(dir, n), 'utf8'));
-      const handle = Number.isInteger(pid) && typeof sessionId === 'string' ? handleOf(pid) : '';
+      const { pid, sessionId, tmux } = JSON.parse(readFileSync(join(dir, n), 'utf8'));
+      const ok = Number.isInteger(pid) && typeof sessionId === 'string';
+      let handle = ok ? handleOf(pid) : '';
+      // Orca 핸들이 없으면 tmux 창(세션 파일의 마지막 %N)으로 대신한다. 살아 있는 프로세스만.
+      if (ok && !handle && typeof tmux === 'string' && aliveOf(pid)) {
+        const pane = /%(\d{1,6})$/.exec(tmux)?.[1];
+        if (pane) handle = `tmux:%${pane}`;
+      }
       if (handle) map.set(sessionId, handle);
     } catch {
       // 깨진 파일은 건너뛴다.
@@ -60,9 +75,10 @@ export function seedEvents({
   now = Date.now(),
   sessionsDir = join(homedir(), '.claude', 'sessions'),
   handleOf = handleOfPid,
+  aliveOf = pidAlive,
 } = {}) {
   const events = [];
-  const handles = terminalsBySession(sessionsDir, handleOf);
+  const handles = terminalsBySession(sessionsDir, handleOf, aliveOf);
   const device = deviceName();
   let dirs = [];
   try {
