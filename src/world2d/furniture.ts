@@ -177,8 +177,8 @@ export function booths(ctx: Ctx, w: number) {
   const xs = boothSeats(w);
   const back = -OFFICE_D / 2;
   const mat = P.dark ? '#4a6da8' : '#cfe8ff';
-  for (const x of xs) rbox(ctx, x, back + 1.7, BOOTH_PITCH - 0.2, 2.9, mat, 0.2, { shadow: false, lw: 0.03 });
-  for (let i = 0; i <= xs.length; i++) rbox(ctx, ((i - xs.length / 2) * BOOTH_PITCH), back + 1.4, 0.1, 2.5, P.woodLight, 0.04, { lw: 0.035 });
+  for (const x of xs) rbox(ctx, x, back + 1.6, BOOTH_PITCH - 0.2, 2.5, mat, 0.2, { shadow: false, lw: 0.03 });
+  for (let i = 0; i <= xs.length; i++) rbox(ctx, (i - xs.length / 2) * BOOTH_PITCH, back + 1.45, 0.1, 2.3, P.woodLight, 0.04, { lw: 0.035 });
   if (xs.length) plant(ctx, w / 2 - 0.6, OFFICE_D / 2 - 0.8, 1.0);
 }
 
@@ -233,7 +233,7 @@ export { NEWHIRE_MIN_W, NEWHIRES } from '../world/trips';
 export function newHireBench(ctx: Ctx) {
   const b = NEWHIRE_BENCH;
   rbox(ctx, b.x, b.z, b.w, b.d, P.woodLight, 0.2);
-  rbox(ctx, b.x, b.z - 0.06, b.w - 0.2, b.d - 0.14, lighten(P.woodLight, 0.35), 0.16, { shadow: false, lw: 0.02 });
+  rbox(ctx, b.x - 0.04, b.z, b.w - 0.14, b.d - 0.2, lighten(P.woodLight, 0.35), 0.16, { shadow: false, lw: 0.02 });
 }
 
 export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string) {

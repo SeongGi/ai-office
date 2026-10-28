@@ -395,7 +395,7 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.beanbag(ctx, w / 2 - 2.0, 2.7, P.sofa[2]);
       F.bookshelf(ctx, -w / 2 + 0.3, -1.0, Math.PI / 2, 1.8);
       if (w >= F.NEWHIRE_MIN_W) F.newHireBench(ctx);
-      F.plant(ctx, w / 2 - 0.6, w >= F.NEWHIRE_MIN_W ? -0.9 : back + 0.6, 1.1);
+      F.plant(ctx, w / 2 - (w >= F.NEWHIRE_MIN_W ? 0.4 : 0.6), w >= F.NEWHIRE_MIN_W ? 0.9 : back + 0.6, 1.1);
       F.plant(ctx, -w / 2 + 0.6, back + 0.6, 1.1);
       break;
     case 'games':

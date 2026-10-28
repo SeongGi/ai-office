@@ -291,7 +291,18 @@ test('every spot lies inside its room and keeps clear of furniture; routes to to
   }
 });
 
-test('no two spots of a room are closer than 1.0 m; standing spots in break rooms are 1.5 m apart', () => {
+// A cat sprite at normal zoom is about 1.3 m wide and 1.4 m tall, the foot point at the bottom centre.
+const SPRITE = { halfW: 0.65, h: 1.4 };
+const WALL_HALF = 0.18; // the wall line is 0.36 thick
+const MARGIN = 0.25;
+
+/** Two standing places do not overlap: 1.9 apart in x, or 1.5 apart in z. */
+const apart = (a, b) => Math.abs(a.x - b.x) >= 1.9 - 1e-9 || Math.abs(a.z - b.z) >= 1.5 - 1e-9;
+
+/** The sprite box of a foot point in room-local coordinates; screen-up is -z in a north room and +z in a south room. */
+const spriteBox = (x, z, side) => ({ x0: x - SPRITE.halfW, x1: x + SPRITE.halfW, z0: side === 'north' ? z - SPRITE.h : z, z1: side === 'north' ? z : z + SPRITE.h });
+
+test('no two spots of a room are closer than 1.0 m; standing spots of break rooms, booths and the outer meeting ring do not overlap', () => {
   for (const c of allCases()) {
     const P = setup(c.counts);
     for (const am of tripRooms(P)) {
@@ -300,7 +311,44 @@ test('no two spots of a room are closer than 1.0 m; standing spots in break room
         for (let j = i + 1; j < spots.length; j++) {
           const d = Math.hypot(spots[i].x - spots[j].x, spots[i].z - spots[j].z);
           assert.ok(d >= 1.0 - 1e-9, `${c.name}: ${am.kind} spots #${i} and #${j} are ${d.toFixed(2)} m apart`);
-          if (M.BREAK_KINDS.includes(am.kind) && !spots[i].sit && !spots[j].sit) assert.ok(d >= 1.5 - 1e-9, `${c.name}: standing ${am.kind} spots #${i} and #${j} are ${d.toFixed(2)} m apart`);
+          const rule = M.BREAK_KINDS.includes(am.kind) || (am.kind === 'meeting' && i >= M.MEETING_CHAIRS);
+          if (rule) assert.ok(apart(spots[i], spots[j]), `${c.name}: ${am.kind} spots #${i} (${spots[i].x}, ${spots[i].z}) and #${j} (${spots[j].x}, ${spots[j].z}) overlap`);
+        }
+      }
+    }
+  }
+});
+
+test('no cat sprite reaches a wall or a door plaque, in a north or a south room', () => {
+  for (const c of allCases()) {
+    const P = setup(c.counts);
+    for (const am of tripRooms(P)) {
+      const w = am.rect.w;
+      const tool = ['library', 'server', 'search'].includes(am.kind);
+      for (const side of ['north', 'south']) {
+        // inside the inner face of the walls; the door plaque (0.82 tall) hangs on the front wall, the tool room's use plaque on the back wall
+        const lo = tool && side === 'north' ? -M.OFFICE_D / 2 + 0.34 + 0.44 : -M.OFFICE_D / 2 + WALL_HALF + MARGIN;
+        const hi = M.OFFICE_D / 2 - 0.41 - 0.05;
+        for (const [i, s] of M.roomSpots(am.kind, w).entries()) {
+          const b = spriteBox(s.x, s.z, side);
+          assert.ok(b.x0 >= -w / 2 + WALL_HALF + MARGIN - 1e-9 && b.x1 <= w / 2 - WALL_HALF - MARGIN + 1e-9, `${c.name}: ${am.kind} #${i} sprite reaches a side wall (${side})`);
+          assert.ok(b.z0 >= lo - 1e-9 && b.z1 <= hi + 1e-9, `${c.name}: ${am.kind} #${i} sprite reaches a wall or plaque (${side}), z ${b.z0.toFixed(2)}..${b.z1.toFixed(2)}`);
+        }
+      }
+    }
+  }
+});
+
+test('kitchen and games spots do not stand on furniture', () => {
+  for (const c of allCases()) {
+    const P = setup(c.counts);
+    for (const am of tripRooms(P).filter((a) => a.kind === 'kitchen' || a.kind === 'games')) {
+      const boxes = M.roomObstacles(am.kind, am.rect.w);
+      assert.ok(boxes.length);
+      for (const [i, s] of M.roomSpots(am.kind, am.rect.w).entries()) {
+        for (const b of boxes) {
+          const inside = Math.abs(s.x - b.x) < b.w / 2 + 0.25 && Math.abs(s.z - b.z) < b.d / 2 + 0.25;
+          assert.ok(!inside, `${c.name}: ${am.kind} spot #${i} (${s.x}, ${s.z}) stands on furniture`);
         }
       }
     }
@@ -346,18 +394,21 @@ test('the gap rule: widen lounge, then games, then kitchen, else the last room o
   else assert.equal(wide[0].kind, 'kitchen');
 });
 
-test('the new-hire bench and its cats stay clear of the walls and the door plaque', () => {
+test('the new-hire bench and its cats stay clear of the walls and the door plaque and of each other', () => {
   const b = M.NEWHIRE_BENCH;
   const w = 9; // the narrowest lounge
   assert.ok(w >= M.NEWHIRE_MIN_W);
-  const inner = 0.18; // wall line half thickness
-  // plaque: up to 0.82 tall, centred on the front wall line
-  const plaqueTop = M.OFFICE_D / 2 - 0.41 - 0.05;
-  assert.ok(b.z - b.d / 2 >= -M.OFFICE_D / 2 + inner && b.z + b.d / 2 <= plaqueTop);
-  assert.ok(b.x - b.w / 2 >= -w / 2 + inner && b.x + b.w / 2 <= w / 2 - inner);
-  for (const h of M.NEWHIRES) {
-    assert.ok(h.z + 1.3 <= plaqueTop, 'cat sprite reaches the plaque');
-    assert.ok(Math.abs(h.x) + 0.45 <= w / 2 - inner, 'cat sprite reaches a side wall');
-    assert.ok(h.z >= b.z - b.d / 2 && h.z <= b.z + b.d / 2 && h.x >= b.x - b.w / 2 && h.x <= b.x + b.w / 2, 'cat is not on the bench');
+  assert.ok(b.z - b.d / 2 >= -M.OFFICE_D / 2 + WALL_HALF + 0.1 && b.z + b.d / 2 <= M.OFFICE_D / 2 - 0.46);
+  assert.ok(b.x - b.w / 2 >= -w / 2 + WALL_HALF && b.x + b.w / 2 <= w / 2 - WALL_HALF);
+  for (const side of ['south']) {
+    // the lounge is always in the south wing
+    for (const h of M.NEWHIRES) {
+      const box = spriteBox(h.x, h.z, side);
+      assert.ok(box.x0 >= -w / 2 + WALL_HALF + MARGIN && box.x1 <= w / 2 - WALL_HALF - MARGIN, `${side}: new hire reaches a side wall`);
+      assert.ok(box.z0 >= -M.OFFICE_D / 2 + WALL_HALF + MARGIN && box.z1 <= M.OFFICE_D / 2 - 0.46, `${side}: new hire reaches a wall or the plaque`);
+      assert.ok(h.z >= b.z - b.d / 2 && h.z <= b.z + b.d / 2 && h.x >= b.x - b.w / 2 && h.x <= b.x + b.w / 2, 'cat is not on the bench');
+    }
   }
+  assert.ok(apart(M.NEWHIRES[0], M.NEWHIRES[1]), 'the two new hires overlap');
+  for (const s of M.roomSpots('lounge', w)) for (const h of M.NEWHIRES) assert.ok(apart(s, h), `lounge spot (${s.x}, ${s.z}) overlaps a new hire`);
 });

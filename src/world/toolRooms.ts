@@ -37,25 +37,23 @@ export function toolSpots(kind: ToolRoomKind, w: number): ToolSpot[] {
     return [
       { x: -0.7, z: 0.55, look: 0.3, via: -0.7, work: 1 },
       { x: 0.7, z: 0.55, look: -0.3, via: 0.7, work: 1 },
-      { x: -e + 1.1, z: -1.9, look: -1, via: -e + 1.1, work: 1 },
-      { x: e - 1.1, z: -1.9, look: 1, via: e - 1.1, work: 1 },
-      { x: 0, z: -2.9, look: 0, via: e - 1.1, work: 1 },
+      { x: -e + 1.1, z: -1.7, look: -1, via: -e + 1.1, work: 1 },
+      { x: e - 1.1, z: -1.7, look: 1, via: e - 1.1, work: 1 },
+      { x: 0, z: -1.5, look: 0, via: e - 1.1, work: 1 },
     ];
   }
-  // Looking spots stand in front of a rack, the monitor wall or the globe and walk down the middle lane between the desks.
+  // Looking spots stand beside a rack or the globe and walk down the middle lane between the desks. A cat sprite is 1.3 wide and 1.4 tall, so none reaches a wall or a wall plaque.
   if (kind === 'server') {
     return [
       ...deskSpots(),
-      { x: -1.2, z: -2.5, look: 0, via: 0, work: 3 },
-      { x: 0, z: -2.5, look: 0, via: 0, work: 3 },
-      { x: 1.2, z: -2.5, look: 0, via: 0, work: 3 },
+      { x: -1.05, z: -1.2, look: 0.3, via: 0, work: 3 },
+      { x: 1.05, z: -1.2, look: -0.3, via: 0, work: 3 },
     ];
   }
   return [
     ...deskSpots(),
-    { x: -0.6, z: -2.6, look: 0.3, via: 0, work: 3 },
-    { x: 0.9, z: -2.6, look: -0.3, via: 0, work: 3 },
-    { x: -e + 0.85, z: -1.4, look: 0, via: 0, work: 3 },
+    { x: -0.95, z: -1.75, look: 0.3, via: 0, work: 3 },
+    { x: 0.95, z: -1.75, look: -0.3, via: 0, work: 3 },
   ];
 }
 
@@ -109,10 +107,10 @@ export function toolObstacles(kind: ToolRoomKind, w: number): Box[] {
 
 // ---------------------------------------------------------------- 1인 부스
 
-/** Booths stand in a row along the back wall, one every BOOTH_PITCH, with a partition between two of them. */
-export const BOOTH_PITCH = 1.6;
+/** Booths stand in a row along the back wall, one every BOOTH_PITCH (a cat sprite is 1.3 wide), with a partition between two of them. */
+export const BOOTH_PITCH = 1.9;
 /** The chair of a booth; the desk is 0.8 in front of it, against the back wall. */
-export const BOOTH_SEAT_Z = -2.4;
+export const BOOTH_SEAT_Z = -2.25;
 const BOOTH_MARGIN = 0.3;
 
 /** How many booths fit between the walls of a room w wide: the outer partitions keep BOOTH_MARGIN from the wall line. */
