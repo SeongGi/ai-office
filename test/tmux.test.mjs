@@ -15,7 +15,8 @@ const PANE = 'tmux:%5';
 function fakeTmux(current, calls = []) {
   const impl = (cmd, args, opts, cb) => {
     calls.push([cmd, ...args]);
-    if (args[0] === 'display-message') cb(null, current + '\n');
+    if (args[0] === 'display-message') cb(null, '1000\n');
+    else if (cmd === 'ps') cb(null, `  1 0 launchd\n 1000 1 zsh\n 1001 1000 zsh\n 1002 1001 ${current === 'claude' ? '/usr/local/bin/claude' : current}\n 2000 1 claude\n`);
     else cb(null, '');
   };
   impl.calls = calls;
@@ -26,13 +27,14 @@ test('orca-send: tmux 핸들은 claude일 때만 보내고 Enter는 따로 보�
   const f = fakeTmux('claude');
   assert.deepEqual(await sendOrcaPrompt(PANE, '  테스트; rm -rf / ', f), { sent: true });
   assert.deepEqual(f.calls, [
-    ['tmux', 'display-message', '-p', '-t', '%5', '#{pane_current_command}'],
+    ['tmux', 'display-message', '-p', '-t', '%5', '#{pane_pid}'],
+    ['ps', '-A', '-o', 'pid=,ppid=,comm='],
     ['tmux', 'send-keys', '-t', '%5', '-l', '--', '테스트; rm -rf /'],
     ['tmux', 'send-keys', '-t', '%5', 'Enter'],
   ]);
   const sh = fakeTmux('zsh');
   assert.match((await sendOrcaPrompt(PANE, 'hi', sh)).reason, /Claude 상태가 아니에요/);
-  assert.equal(sh.calls.length, 1, 'claude가 아니면 send-keys를 부르지 않는다');
+  assert.equal(sh.calls.length, 2, 'claude가 아니면 send-keys를 부르지 않는다(다른 창의 claude는 세지 않는다)');
   assert.equal((await sendOrcaPrompt(PANE, 'a\0b', fakeTmux('claude'))).sent, false);
   assert.equal((await sendOrcaPrompt(PANE, '  ', sh)).sent, false);
   assert.equal((await sendOrcaPrompt('tmux:%x', 'hi', sh)).sent, false);
@@ -43,13 +45,13 @@ test('orca-send: tmux 핸들은 claude일 때만 보내고 Enter는 따로 보�
 test('orca-close: tmux 핸들은 claude일 때만 /exit를 보낸다', async () => {
   const f = fakeTmux('claude');
   assert.deepEqual(await closeOrcaTerminal(PANE, f), { closed: true });
-  assert.deepEqual(f.calls[1], ['tmux', 'send-keys', '-t', '%5', '-l', '--', '/exit']);
-  assert.deepEqual(f.calls[2], ['tmux', 'send-keys', '-t', '%5', 'Enter']);
+  assert.deepEqual(f.calls[2], ['tmux', 'send-keys', '-t', '%5', '-l', '--', '/exit']);
+  assert.deepEqual(f.calls[3], ['tmux', 'send-keys', '-t', '%5', 'Enter']);
   const sh = fakeTmux('vim');
   const r = await closeOrcaTerminal(PANE, sh);
   assert.equal(r.closed, false);
   assert.match(r.reason, /Claude 상태가 아니에요/);
-  assert.equal(sh.calls.length, 1);
+  assert.equal(sh.calls.length, 2);
 });
 
 test('claude 어댑터: Orca 핸들이 없으면 TMUX_PANE을 쓴다', () => {
@@ -111,7 +113,7 @@ test('server: routes.json과 ingest가 tmux 핸들을 받고 잘못된 모양은
     await join1('bad', undefined);
     const ok = await (await fetch(`${base}/send`, { method: 'POST', headers: H, body: JSON.stringify({ agent: 'lap', text: 'hi' }) })).json();
     assert.deepEqual(ok, { sent: true });
-    assert.deepEqual(f.calls[1], ['tmux', 'send-keys', '-t', '%5', '-l', '--', 'hi']);
+    assert.deepEqual(f.calls[2], ['tmux', 'send-keys', '-t', '%5', '-l', '--', 'hi']);
     const bad = await (await fetch(`${base}/send`, { method: 'POST', headers: H, body: JSON.stringify({ agent: 'bad', text: 'hi' }) })).json();
     assert.equal(bad.sent, false);
     await join1('ing', 'tmux:%12');
