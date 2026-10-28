@@ -40,7 +40,8 @@ import {
   vendingMachine,
   waterCooler,
 } from './props';
-import { serverRacks } from './toolRooms';
+import { serverRacks, type ToolRoomKind } from './toolRooms';
+import { ToolSigns } from './toolSigns';
 import { grass, logoMaterial, paving, planks, terrazzo } from './textures';
 import { CORRIDOR, LOBBY_WIDTH, OFFICE_D, SEGMENT, WALL_H, type AmenityKind, type BuildingLayout } from './layout';
 
@@ -87,6 +88,7 @@ export class Building {
   private units = new Map<string, Section>();
   private lobby: Section | null = null;
   private theme: ThemeName = 'light';
+  private signs = new ToolSigns();
 
   // Tall exterior walls get their own material instances so they can fade.
   private wallFade = new MeshStandardMaterial({ roughness: 0.9, transparent: true });
@@ -166,6 +168,7 @@ export class Building {
 
   setTheme(theme: ThemeName) {
     this.theme = theme;
+    this.signs.setTheme(theme);
     const p = PALETTES[theme];
     const night = theme === 'dark';
     for (const m of [this.wallFade, this.westFade]) m.color.set(p.wall);
@@ -176,6 +179,11 @@ export class Building {
     this.floors.slab.color.set(night ? '#2a2f37' : '#c9ced6');
     this.floors.carpetGrey.color.set(night ? '#2c313a' : '#b9c0ca');
     this.floors.rubber.color.set(night ? '#2b3540' : '#7d9bb5');
+  }
+
+  /** How many cats stand in each tool room, shown on its sign. */
+  setToolCounts(counts: Partial<Record<ToolRoomKind, number>>) {
+    this.signs.setCounts(counts);
   }
 
   /** Fade the tall exterior walls when the camera swings behind them. */
@@ -397,6 +405,16 @@ export class Building {
     for (let i = 0; i <= posts; i++) k.add(G.box(0.08, 1.6, 0.05), M.charcoal(), x, 1.9, zFrom + ((zTo - zFrom) * i) / posts);
   }
 
+  /** A two-sided placard on legs near the door: what the room is for. Both faces read correctly from either side. */
+  private toolSign(k: Kit, kind: ToolRoomKind, x: number, z: number) {
+    const mat = this.signs.material(kind);
+    const geo = new PlaneGeometry(1.6, 0.75);
+    for (const sx of [-0.7, 0.7]) k.add(G.box(0.05, 0.95, 0.05), M.charcoal(), x + sx, 0.475, z);
+    k.add(G.box(1.7, 0.85, 0.04), M.charcoal(), x, 1.35, z);
+    k.add(geo, mat, x, 1.35, z + 0.023, { cast: false });
+    k.add(geo, mat, x, 1.35, z - 0.023, { cast: false, ry: Math.PI });
+  }
+
   private furnishAmenity(k: Kit, kind: AmenityKind, side: 'north' | 'south', w: number, zMid: number) {
     const yaw = side === 'north' ? 0 : Math.PI;
     const d = OFFICE_D;
@@ -488,6 +506,7 @@ export class Building {
         floorLamp(k, w / 2 - 0.8, -3.0);
         plantTall(k, w / 2 - 0.5, d / 2 - 0.6);
         pendant(k, 0, -0.45, 2.3, '#f2cc8f');
+        this.toolSign(k, 'library', -w / 2 + 1.25, d / 2 - 1.0);
         break;
       }
       case 'server': {
@@ -496,6 +515,7 @@ export class Building {
         consoleDesk(k, 0, 0.3, 0, 2.0, ['#6bd6ff', '#9be7a5']);
         plantTall(k, w / 2 - 0.5, d / 2 - 0.6);
         pendant(k, 0, 0.3, 2.3, '#22252b');
+        this.toolSign(k, 'server', -w / 2 + 1.25, d / 2 - 1.0);
         break;
       }
       case 'search': {
@@ -509,6 +529,7 @@ export class Building {
         globe(k, -w / 2 + 0.85, -2.4);
         plantTall(k, w / 2 - 0.5, d / 2 - 0.6);
         pendant(k, 0, -1.0, 2.3, '#22252b');
+        this.toolSign(k, 'search', -w / 2 + 1.25, d / 2 - 1.0);
         break;
       }
       case 'booths': {

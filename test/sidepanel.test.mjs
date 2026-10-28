@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRows, clipText, createTally, observeTools, relTime, toolClass } from '../shared/sidepanel.js';
+import { buildRows, clipText, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, relTime, ROOM_INFO, toolClass, toolTag } from '../shared/sidepanel.js';
 
 test('toolClass maps tools to room classes and other', () => {
   assert.equal(toolClass('Read'), 'library');
@@ -51,4 +51,34 @@ test('buildRows is newest first across agents and limited', () => {
   assert.deepEqual(rows.map((r) => r.text), ['five', 'three']);
   assert.equal(rows[0].agentId, 'a');
   assert.equal(rows[0].hue, 120);
+});
+
+test('toolTag joins tool and activity, drops the default text, and cuts to 14 characters', () => {
+  assert.equal(toolTag('Grep', 'Using Grep'), 'Grep');
+  assert.equal(toolTag('Grep', 'Grep'), 'Grep');
+  assert.equal(toolTag('Grep', '로그인 함수 찾는 중'), 'Grep: 로그인 함수 …');
+  assert.equal([...toolTag('Bash', 'npm run build now please')].length, 14);
+  assert.equal(toolTag('Read', ''), 'Read');
+  assert.equal(toolTag(undefined, 'x'), '');
+});
+
+test('every guide place has a name and plain text, and the tools match toolClass', () => {
+  for (const p of GUIDE_PLACES) assert.ok(ROOM_INFO[p].name && ROOM_INFO[p].plain && ROOM_INFO[p].use && ROOM_INFO[p].tools);
+  for (const room of ['library', 'server', 'search']) for (const t of ROOM_INFO[room].tools.split(', ')) assert.equal(toolClass(t), room);
+  for (const t of ROOM_INFO.desk.tools.split(', ')) assert.equal(toolClass(t), 'other');
+});
+
+test('liveRoomCounts puts a fresh tool cat in its room, others at the desk, and skips subagents', () => {
+  const now = 100_000;
+  const agents = {
+    a: { id: 'a', status: 'working', tool: 'Grep', lastTool: 'Grep', toolAt: now - 1000 },
+    b: { id: 'b', status: 'working', tool: 'Edit', lastTool: 'Edit', toolAt: now - 1000 },
+    c: { id: 'c', status: 'idle' },
+    d: { id: 'd', status: 'working', parent: 'a', tool: 'Bash', lastTool: 'Bash', toolAt: now - 1000 },
+  };
+  const memo = new Map();
+  assert.deepEqual(liveRoomCounts(memo, agents, now), { library: 1, server: 0, search: 0, desk: 1 });
+  delete agents.a;
+  liveRoomCounts(memo, agents, now);
+  assert.equal(memo.has('a'), false);
 });

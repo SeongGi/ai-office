@@ -1,5 +1,6 @@
 import type { WorldState } from '../../shared/protocol';
-import { buildRows, createTally, observeTools, TOOL_CLASSES, type ToolClass } from '../../shared/sidepanel';
+import type { ToolState } from '../../shared/places';
+import { buildRows, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, ROOM_INFO, TOOL_CLASSES, type GuidePlace, type ToolClass } from '../../shared/sidepanel';
 import { teamAccent } from '../world/palette';
 
 const STORE_KEY = 'agent-floor.sidePanel';
@@ -8,12 +9,13 @@ const NARROW_PX = 900;
 export const PANEL_KO = {
   title: '오늘의 사무실',
   tools: '도구 사용 횟수',
+  guide: '도구 방 안내',
   timeline: '최근 활동',
   empty: '아직 활동이 없어요',
   toggle: '오늘의 사무실 열고 닫기',
 };
 
-const TOOL_KO: Record<ToolClass, string> = { library: '자료실', server: '서버실', search: '정보검색실', other: '기타' };
+const TOOL_KO: Record<ToolClass, string> = { library: '자료실', server: '서버실', search: '정보검색실', other: '책상' };
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -36,6 +38,10 @@ export class SidePanel {
   private tally = createTally();
   private state: WorldState | null = null;
   private toolsBox = document.createElement('div');
+  private guide = document.createElement('details');
+  private guideRows = document.createElement('div');
+  private dwell = new Map<string, ToolState>();
+  private live: Record<GuidePlace, number> = { library: 0, server: 0, search: 0, desk: 0 };
   private list = document.createElement('ol');
   private key = '';
   private open: boolean;
@@ -48,7 +54,16 @@ export class SidePanel {
     this.root.innerHTML = `<h2>${PANEL_KO.title}</h2><h3>${PANEL_KO.tools}</h3>`;
     const h = document.createElement('h3');
     h.textContent = PANEL_KO.timeline;
-    this.root.append(this.toolsBox, h, this.list);
+    this.guide.className = 'sp-guide';
+    this.guide.open = true;
+    const gs = document.createElement('summary');
+    gs.textContent = PANEL_KO.guide;
+    this.guideRows.className = 'sp-guide-rows';
+    this.guide.append(gs, this.guideRows);
+    this.guideRows.innerHTML = GUIDE_PLACES.map(
+      (p) => `<div class="sp-tool sp-place"><span class="sp-tool-name">${ROOM_INFO[p].name}</span><span class="sp-plain">${ROOM_INFO[p].plain}</span><b data-place="${p}">0</b></div>`,
+    ).join('');
+    this.root.append(this.toolsBox, this.guide, h, this.list);
     this.list.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
       if (b?.dataset.id) this.onSelect(b.dataset.id);
@@ -82,20 +97,23 @@ export class SidePanel {
   observe(state: WorldState) {
     this.state = state;
     observeTools(this.tally, state.agents);
+    this.live = liveRoomCounts(this.dwell, state.agents, Date.now());
     if (!this.key) this.render();
   }
 
   private render() {
     if (!this.open || !this.state) return;
     const counts = this.tally.counts;
+    this.live = liveRoomCounts(this.dwell, this.state.agents, Date.now());
     const rows = buildRows(this.state, Date.now());
-    const key = TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
+    const key = TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + GUIDE_PLACES.map((p) => this.live[p]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
     if (key === this.key) return;
     this.key = key;
     const max = Math.max(1, ...TOOL_CLASSES.map((c) => counts[c]));
     this.toolsBox.innerHTML = TOOL_CLASSES.map(
       (c) => `<div class="sp-tool"><span class="sp-tool-name">${TOOL_KO[c]}</span><span class="sp-bar"><i style="width:${Math.round((counts[c] / max) * 100)}%"></i></span><b>${counts[c]}</b></div>`,
     ).join('');
+    for (const b of this.guideRows.querySelectorAll<HTMLElement>('b[data-place]')) b.textContent = String(this.live[b.dataset.place as GuidePlace]);
     this.list.innerHTML = rows.length
       ? rows
           .map(

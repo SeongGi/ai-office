@@ -1,4 +1,5 @@
 import type { Agent, HistoryEntry, WorldState } from './protocol';
+import type { ToolState } from './places';
 
 export type ToolClass = 'library' | 'server' | 'search' | 'other';
 export interface ToolTally {
@@ -25,3 +26,15 @@ export function observeTools(tally: ToolTally, agents: Record<string, Agent>): R
 export function relTime(ts: number, now: number): string;
 export function clipText(text: unknown, max?: number): string;
 export function buildRows(state: WorldState, now: number, limit?: number): TimelineRow[];
+
+export interface RoomInfo {
+  name: string;
+  use: string;
+  tools: string;
+  plain: string;
+}
+export type GuidePlace = 'library' | 'server' | 'search' | 'desk';
+export const ROOM_INFO: Record<GuidePlace, RoomInfo>;
+export const GUIDE_PLACES: GuidePlace[];
+export function toolTag(tool: string | undefined | null, activity: string | undefined | null, max?: number): string;
+export function liveRoomCounts(memo: Map<string, ToolState>, agents: Record<string, Agent>, nowMs: number): Record<GuidePlace, number>;

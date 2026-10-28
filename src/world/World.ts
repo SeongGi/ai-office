@@ -448,12 +448,15 @@ export class World {
       for (const s of this.agents.values()) if (!s.leaving && s.character.root.visible && this.frustum.containsPoint(s.character.root.getWorldPosition(this.tmpV))) shown++;
     this.crowded = shown > 12;
     let busy = false;
+    const inRoom = { library: 0, server: 0, search: 0 };
     for (const [id, s] of this.agents) {
       const agent = this.state.agents[id];
       if (agent && !s.leaving) this.applyStatus(s, agent);
       if (s.place === 'server' && s.character.mode === 'standing') busy = true;
+      if ((s.place === 'library' || s.place === 'server' || s.place === 'search') && s.character.mode === 'standing' && !s.leaving) inRoom[s.place] += 1;
     }
     this.serverBusy = busy;
+    this.building.setToolCounts(inRoom);
   }
 
   /** Where an agent stands to wave off a leaver: the corridor beside the elevator, in rows. */

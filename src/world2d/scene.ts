@@ -3,6 +3,7 @@
 import type { Team } from '../../shared/protocol';
 import { CORRIDOR, ELEVATOR, LOBBY_WIDTH, OFFICE_D, type AmenityKind, type BuildingLayout, type RoomLayout } from '../world/layout';
 import { lighten, mix } from './color';
+import { ROOM_INFO } from '../../shared/sidepanel';
 import { circle, item, rbox, setStyle, shape, text, textWidth } from './draw';
 import * as F from './furniture';
 import { receptionSpot } from './npcs';
@@ -151,6 +152,12 @@ export function drawScene(ctx: Ctx, d: SceneData, cull: Rect4 | null) {
   // --- walls
   drawWalls(ctx, P, plan, unitsOf(d, P), body);
 
+  // --- what each tool room is for, on its back wall
+  for (const a of plan.amenities) {
+    const q = a.rect;
+    if ((a.kind === 'library' || a.kind === 'server' || a.kind === 'search') && hit(cull, q.x - q.w / 2, q.z - q.d / 2, q.x + q.w / 2, q.z + q.d / 2)) drawUsePlaque(ctx, P, a.kind, q.x, a.side === 'north' ? q.z - q.d / 2 + 0.34 : q.z + q.d / 2 - 0.34, q.w);
+  }
+
   // --- elevator facade, then plaques
   drawElevatorFrame(ctx, P);
   for (const u of unitsOf(d, P)) {
@@ -236,6 +243,17 @@ function splitLabel(label: string): [string, string] {
   if (at < 0) return [label.slice(0, Math.ceil(mid)), label.slice(Math.ceil(mid))];
   const sep = /\s/.test(label[at]);
   return [label.slice(0, sep ? at : at + 1).trim(), label.slice(at + 1).trim()];
+}
+
+/** Two lines on the back wall of a tool room: what it is for, and which tools. Same colours as the door plaques, so night works too. */
+function drawUsePlaque(ctx: Ctx, P: Palette2D, kind: 'library' | 'server' | 'search', x: number, z: number, roomW: number) {
+  const info = ROOM_INFO[kind];
+  const s1 = 0.26;
+  const s2 = 0.2;
+  const w = Math.min(roomW - 0.3, Math.max(textWidth(ctx, info.use, s1), textWidth(ctx, info.tools, s2, 600)) + 0.5);
+  rbox(ctx, x, z, w, 0.88, P.plaque, 0.22, { lw: 0.05, line: P.outline });
+  text(ctx, info.use, x, z - 0.17, s1, P.plaqueText);
+  text(ctx, info.tools, x, z + 0.2, s2, P.plaqueText, { weight: 600 });
 }
 
 function drawPlaque(ctx: Ctx, P: Palette2D, u: Unit) {

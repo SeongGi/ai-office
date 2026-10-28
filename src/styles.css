@@ -1241,6 +1241,24 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.sp-guide {
+  margin: 12px 0 0;
+}
+
+.sp-guide summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.sp-plain {
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sp-list {
   list-style: none;
   margin: 0;

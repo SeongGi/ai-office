@@ -1,5 +1,5 @@
 // Pure helpers for the side panel. No DOM, so node:test can import them.
-import { toolRoom } from './places.js';
+import { initialToolState, stepToolRoom, toolRoom } from './places.js';
 
 export const TOOL_CLASSES = ['library', 'server', 'search', 'other'];
 export const TIMELINE_MAX = 15;
@@ -61,4 +61,42 @@ export function buildRows(state, now, limit = TIMELINE_MAX) {
   }
   rows.sort((x, y) => y.ts - x.ts);
   return rows.slice(0, limit).map((r) => ({ ...r, rel: relTime(r.ts, now) }));
+}
+
+/** What each place is for: the plaque in the room (use, tools) and the panel guide (plain). */
+export const ROOM_INFO = {
+  library: { name: '자료실', use: '파일 읽기와 찾기', tools: 'Read, Grep, Glob', plain: '파일 읽기, 찾기' },
+  server: { name: '서버실', use: '명령 실행, 빌드, 배포', tools: 'Bash', plain: '명령 실행, 빌드' },
+  search: { name: '정보검색실', use: '웹 검색, 자료 가져오기', tools: 'WebSearch, WebFetch, MCP', plain: '웹 검색, 자료 가져오기' },
+  desk: { name: '책상', use: '수정, 글쓰기 등', tools: 'Edit, Write', plain: '수정, 글쓰기 등' },
+};
+export const GUIDE_PLACES = ['library', 'server', 'search', 'desk'];
+
+/** Tiny tag for a cat in a tool room: 'Grep: 로그인 함수 찾는 중', the whole text cut to max characters. */
+export function toolTag(tool, activity, max = 14) {
+  const head = clipText(tool, 99).slice(0, 10);
+  if (!head) return '';
+  let rest = String(activity ?? '').replace(/^Using\s+\S+\s*/, '').trim();
+  if (rest === tool) rest = '';
+  if (!rest) return head;
+  return clipText(`${head}: ${rest}`, max);
+}
+
+/**
+ * Live head count per place for the panel, from the same dwell rules the renderers use.
+ * `memo` (a Map) keeps each cat's dwell state between calls; call it about once a second.
+ * desk = working cats that are not in a tool room. Subagents are not counted.
+ */
+export function liveRoomCounts(memo, agents, nowMs) {
+  const out = { library: 0, server: 0, search: 0, desk: 0 };
+  for (const a of Object.values(agents)) {
+    if (a.parent) continue;
+    let st = memo.get(a.id);
+    if (!st) memo.set(a.id, (st = initialToolState(a, nowMs)));
+    const room = stepToolRoom(st, a, nowMs);
+    if (room) out[room] += 1;
+    else if (a.status === 'working' || a.status === 'thinking' || a.status === 'waiting' || a.status === 'error') out.desk += 1;
+  }
+  for (const id of memo.keys()) if (!agents[id]) memo.delete(id);
+  return out;
 }

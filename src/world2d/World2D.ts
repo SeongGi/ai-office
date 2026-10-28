@@ -18,6 +18,7 @@ import {
   type ToolState,
 } from '../../shared/places';
 import type { FloorWorld, WorldPerf } from '../core/worldApi';
+import { toolTag } from '../../shared/sidepanel';
 import {
   computeLayout,
   ELEVATOR,
@@ -961,6 +962,7 @@ export class World2D implements FloorWorld {
     }
 
     this.drawBubbles(ctx, t, k);
+    this.drawToolTags(ctx, k);
     if (!this.reduced) this.drawParty(ctx, k);
 
     // letters and ripples
@@ -1011,6 +1013,30 @@ export class World2D implements FloorWorld {
     if (am.side === 'south') ctx.rotate(Math.PI);
     drawServerLeds(ctx, am.rect.w, this.reduced ? 0 : t, busy);
     ctx.restore();
+  }
+
+  /** A tiny tag under each cat standing in a tool room: the tool and what it does. Neighbours alternate in height so tags do not overlap. */
+  private drawToolTags(ctx: CanvasRenderingContext2D, k: number) {
+    const state = this.state;
+    if (!state) return;
+    const P = PALETTES2D[this.theme];
+    const row: Agent2D[] = [];
+    for (const a of this.agents.values()) if ((a.place === 'library' || a.place === 'server' || a.place === 'search') && a.mode === 'standing' && !a.leaving) row.push(a);
+    row.sort((p, q) => p.place.localeCompare(q.place) || p.x - q.x);
+    let prev = '';
+    let n = 0;
+    for (const a of row) {
+      n = a.place === prev ? n + 1 : 0;
+      prev = a.place;
+      const ag = state.agents[a.id];
+      const str = ag ? toolTag(ag.lastTool ?? ag.tool, ag.activity) : '';
+      if (!str) continue;
+      const sz = 0.17 * k;
+      const w = this.bubbleWidth(ctx, str) * sz + 0.3 * k;
+      const y = a.z + (0.3 + (n % 2) * 0.3) * k;
+      rbox(ctx, a.x, y, w, 0.27 * k, P.plaque, 0.12 * k, { lw: 0.035 * k, line: P.outline, shadow: false });
+      text(ctx, str, a.x, y + 0.01 * k, sz, P.plaqueText, { weight: 700 });
+    }
   }
 
   private bubbleWidth(ctx: CanvasRenderingContext2D, str: string) {
