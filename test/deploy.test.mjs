@@ -170,3 +170,25 @@ test('close-queue: 60초 지난 항목은 버리고, 토큰을 요구한다', as
     }
   });
 });
+
+test('seed: 열린 세션의 터미널 핸들을 읽어 join에 싣는다', async () => {
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'af-seed-'));
+  const root = join(dir, 'projects');
+  const sessionsDir = join(dir, 'sessions');
+  await mkdir(join(root, '-x-proj'), { recursive: true });
+  await mkdir(sessionsDir);
+  const line = JSON.stringify({ cwd: '/x/proj', type: 'user', message: { role: 'user', content: 'hi' } });
+  await writeFile(join(root, '-x-proj', 'aaaa1111-0000-0000-0000-000000000000.jsonl'), line + '\n');
+  await writeFile(join(root, '-x-proj', 'bbbb2222-0000-0000-0000-000000000000.jsonl'), line + '\n');
+  await writeFile(join(sessionsDir, '111.json'), JSON.stringify({ pid: 111, sessionId: 'aaaa1111-0000-0000-0000-000000000000' }));
+  await writeFile(join(sessionsDir, '222.json'), '{깨진');
+  const handleOf = (pid) => (pid === 111 ? 'term_abcdef123456' : '');
+  const events = seedEvents({ root, sessionsDir, handleOf });
+  const a = events.find((e) => e.agent.includes('aaaa1111'));
+  const b = events.find((e) => e.agent.includes('bbbb2222'));
+  assert.equal(a.terminal, 'term_abcdef123456');
+  assert.equal(b.terminal, undefined, '프로세스가 없는 세션에는 핸들을 싣지 않는다');
+});
