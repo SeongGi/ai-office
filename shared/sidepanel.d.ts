@@ -38,3 +38,20 @@ export const ROOM_INFO: Record<GuidePlace, RoomInfo>;
 export const GUIDE_PLACES: GuidePlace[];
 export function toolTag(tool: string | undefined | null, activity: string | undefined | null, max?: number): string;
 export function liveRoomCounts(memo: Map<string, ToolState>, agents: Record<string, Agent>, nowMs: number): Record<GuidePlace, number>;
+
+export interface RosterEntry {
+  id: string;
+  name: string;
+  hue: number;
+  status: Agent['status'];
+  role: string;
+  doing: string;
+  kind: string;
+  rel: string;
+}
+export interface RosterMain extends RosterEntry {
+  subs: RosterEntry[];
+  moreSubs: number;
+}
+export const MAX_SUBS: number;
+export function buildRoster(state: WorldState, now: number): RosterMain[];

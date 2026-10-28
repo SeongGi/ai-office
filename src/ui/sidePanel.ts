@@ -1,15 +1,20 @@
 import type { WorldState } from '../../shared/protocol';
 import type { ToolState } from '../../shared/places';
-import { buildRows, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, ROOM_INFO, TOOL_CLASSES, type GuidePlace, type ToolClass } from '../../shared/sidepanel';
+import { buildRoster, buildRows, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, ROOM_INFO, TOOL_CLASSES, type GuidePlace, type ToolClass } from '../../shared/sidepanel';
 import { teamAccent } from '../world/palette';
+import { STATUS_LABEL_KO } from './labels';
 
 const STORE_KEY = 'agent-floor.sidePanel';
+const TIMELINE_KEY = 'agent-floor.sidePanel.timeline';
 const NARROW_PX = 900;
 
 export const PANEL_KO = {
   title: '오늘의 사무실',
   tools: '도구 사용 횟수',
   guide: '도구 방 안내',
+  roster: '직원',
+  rosterEmpty: '지금 일하는 직원이 없어요',
+  moreSubs: (n: number) => `서브 ${n}명 더 있어요`,
   timeline: '최근 활동',
   empty: '아직 활동이 없어요',
   toggle: '오늘의 사무실 열고 닫기',
@@ -19,6 +24,14 @@ const TOOL_KO: Record<ToolClass, string> = { library: '자료실', server: '서�
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+function loadTimelineOpen(): boolean {
+  try {
+    return localStorage.getItem(TIMELINE_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 function loadOpen(): boolean {
@@ -42,6 +55,8 @@ export class SidePanel {
   private guideRows = document.createElement('div');
   private dwell = new Map<string, ToolState>();
   private live: Record<GuidePlace, number> = { library: 0, server: 0, search: 0, desk: 0 };
+  private rosterBox = document.createElement('div');
+  private timeline = document.createElement('details');
   private list = document.createElement('ol');
   private key = '';
   private open: boolean;
@@ -51,9 +66,22 @@ export class SidePanel {
     this.root.setAttribute('aria-label', PANEL_KO.title);
     this.toolsBox.className = 'sp-tools';
     this.list.className = 'sp-list';
-    this.root.innerHTML = `<h2>${PANEL_KO.title}</h2><h3>${PANEL_KO.tools}</h3>`;
-    const h = document.createElement('h3');
-    h.textContent = PANEL_KO.timeline;
+    this.rosterBox.className = 'sp-roster';
+    this.root.innerHTML = `<h2>${PANEL_KO.title}</h2><h3>${PANEL_KO.roster}</h3>`;
+    this.root.append(this.rosterBox);
+    this.root.insertAdjacentHTML('beforeend', `<h3>${PANEL_KO.tools}</h3>`);
+    this.timeline.className = 'sp-timeline';
+    this.timeline.open = loadTimelineOpen();
+    const ts = document.createElement('summary');
+    ts.textContent = PANEL_KO.timeline;
+    this.timeline.append(ts, this.list);
+    this.timeline.addEventListener('toggle', () => {
+      try {
+        localStorage.setItem(TIMELINE_KEY, this.timeline.open ? '1' : '0');
+      } catch {
+        // 저장하지 못해도 이번 화면에서는 바뀐다.
+      }
+    });
     this.guide.className = 'sp-guide';
     this.guide.open = true;
     const gs = document.createElement('summary');
@@ -63,11 +91,13 @@ export class SidePanel {
     this.guideRows.innerHTML = GUIDE_PLACES.map(
       (p) => `<div class="sp-tool sp-place"><span class="sp-tool-name">${ROOM_INFO[p].name}</span><span class="sp-plain">${ROOM_INFO[p].plain}</span><b data-place="${p}">0</b></div>`,
     ).join('');
-    this.root.append(this.toolsBox, this.guide, h, this.list);
-    this.list.addEventListener('click', (e) => {
+    this.root.append(this.toolsBox, this.guide, this.timeline);
+    const pick = (e: Event) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
       if (b?.dataset.id) this.onSelect(b.dataset.id);
-    });
+    };
+    this.list.addEventListener('click', pick);
+    this.rosterBox.addEventListener('click', pick);
     this.open = loadOpen();
     this.apply();
     window.setInterval(() => this.render(), 1000);
@@ -106,9 +136,24 @@ export class SidePanel {
     const counts = this.tally.counts;
     this.live = liveRoomCounts(this.dwell, this.state.agents, Date.now());
     const rows = buildRows(this.state, Date.now());
-    const key = TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + GUIDE_PLACES.map((p) => this.live[p]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
+    const roster = buildRoster(this.state, Date.now());
+    const key = roster.map((m) => [m, ...m.subs].map((r) => `${r.id}:${r.name}:${r.status}:${r.role}:${r.doing}:${r.rel}`).join('~') + m.moreSubs).join(',') + '#' + TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + GUIDE_PLACES.map((p) => this.live[p]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
     if (key === this.key) return;
     this.key = key;
+    const pill = (st: keyof typeof STATUS_LABEL_KO) => `<span class="sp-pill sp-st-${st}">${esc(STATUS_LABEL_KO[st])}</span>`;
+    this.rosterBox.innerHTML = roster.length
+      ? roster
+          .map(
+            (m) =>
+              `<div class="sp-person"><button type="button" class="sp-row" data-id="${esc(m.id)}"><span class="sp-dot" style="background:${teamAccent(m.hue).getStyle()}"></span><span class="sp-main"><span class="sp-head"><span class="sp-who">${esc(m.name)}</span><span class="sp-chip">${esc(m.role)}</span>${pill(m.status)}</span><span class="sp-text">${esc(m.doing)}</span></span></button>${m.subs
+                .map(
+                  (s) =>
+                    `<button type="button" class="sp-row sp-sub" data-id="${esc(s.id)}"><span class="sp-main"><span class="sp-head"><span class="sp-who">${esc(s.name)}</span>${pill(s.status)}</span><span class="sp-text">${esc(s.doing)}</span></span></button>`,
+                )
+                .join('')}${m.moreSubs ? `<div class="sp-more">${esc(PANEL_KO.moreSubs(m.moreSubs))}</div>` : ''}</div>`,
+          )
+          .join('')
+      : `<div class="sp-empty">${PANEL_KO.rosterEmpty}</div>`;
     const max = Math.max(1, ...TOOL_CLASSES.map((c) => counts[c]));
     this.toolsBox.innerHTML = TOOL_CLASSES.map(
       (c) => `<div class="sp-tool"><span class="sp-tool-name">${TOOL_KO[c]}</span><span class="sp-bar"><i style="width:${Math.round((counts[c] / max) * 100)}%"></i></span><b>${counts[c]}</b></div>`,

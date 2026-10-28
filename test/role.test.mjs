@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeJob, isWatcher } from '../shared/role.js';
+import { describeJob, displayName, isWatcher } from '../shared/role.js';
 
 const agent = (extra) => ({ id: 'claude-code:a1', name: 'Claude', role: 'Lead', team: 'portal', source: 'claude-code', status: 'idle', history: [], ...extra });
 
@@ -46,4 +46,24 @@ test('describeJob: 서브에이전트와 자동 감시', () => {
   assert.match(w.kind, /Claude 세션 아님/);
   assert.match(w.doing, /AWS 상태 확인/);
   assert.equal(isWatcher(agent({ source: 'cloud-status', parent: 'x' })), false);
+});
+
+test('displayName: 메인은 이름 그대로, 서브는 메인-서브', () => {
+  const main = agent({ id: 'm', name: '사무실' });
+  const agents = { m: main };
+  assert.equal(displayName(main, agents), '사무실');
+  assert.equal(displayName(agent({ id: 's', parent: 'm', name: '탐색기' }), agents), '사무실-탐색기');
+  assert.equal(displayName(agent({ id: 's', parent: 'm', name: '', role: 'Explore' }), agents), '사무실-Explore');
+  assert.equal(displayName(agent({ id: 's', parent: 'm', name: '', role: '' }), agents), '사무실-서브');
+});
+
+test('displayName: 접두사 중복, 긴 이름, 부모 없음', () => {
+  const main = agent({ id: 'm', name: '사무실' });
+  const agents = { m: main };
+  assert.equal(displayName(agent({ id: 's', parent: 'm', name: '사무실 탐색' }), agents), '사무실 탐색');
+  const long = { m: agent({ id: 'm', name: 'A'.repeat(30) }) };
+  const out = displayName(agent({ id: 's', parent: 'm', name: 'B'.repeat(30) }), long);
+  assert.ok(out.length <= 28, out);
+  assert.equal(out, 'A'.repeat(13) + '…-' + 'B'.repeat(11) + '…');
+  assert.equal(displayName(agent({ id: 's', parent: 'gone', name: '고아' }), agents), '고아');
 });

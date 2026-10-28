@@ -78,3 +78,19 @@ export function describeJob(agent) {
   }
   return { role, doing, kind: isSub ? '서브에이전트' : '세션' };
 }
+
+function clipPart(text, max) {
+  const t = oneLine(text);
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+
+/** 화면에 쓰는 이름. 서브에이전트는 '메인-서브' 꼴이고 전체 28자 이하다. */
+export function displayName(agent, agents) {
+  const own = oneLine(agent.name);
+  const parent = agent.parent ? agents?.[agent.parent] : undefined;
+  if (!parent) return clipPart(own || agent.role || '서브', 28);
+  const parentName = oneLine(parent.name);
+  const sub = own || oneLine(agent.role) || '서브';
+  if (parentName && sub.startsWith(parentName)) return clipPart(sub, 28);
+  return `${clipPart(parentName, 14)}-${clipPart(sub, 12)}`;
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRows, clipText, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, relTime, ROOM_INFO, toolClass, toolTag } from '../shared/sidepanel.js';
+import { buildRoster, buildRows, clipText, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, relTime, ROOM_INFO, toolClass, toolTag } from '../shared/sidepanel.js';
 
 test('toolClass maps tools to room classes and other', () => {
   assert.equal(toolClass('Read'), 'library');
@@ -81,4 +81,29 @@ test('liveRoomCounts puts a fresh tool cat in its room, others at the desk, and 
   delete agents.a;
   liveRoomCounts(memo, agents, now);
   assert.equal(memo.has('a'), false);
+});
+
+const mk = (id, extra) => ({ id, name: id, role: 'Lead', team: 't1', source: 'claude-code', status: 'idle', history: [], lastSeen: 0, joinedAt: 0, ...extra });
+
+test('buildRoster: 순서, 서브 묶기, 퇴근 제외, moreSubs', () => {
+  const agents = {
+    idle1: mk('idle1', { team: 't1' }),
+    work2: mk('work2', { team: 't2', status: 'working' }),
+    work1: mk('work1', { team: 't1', status: 'thinking' }),
+    gone: mk('gone', { status: 'offline' }),
+    done1: mk('done1', { status: 'done', team: 't2' }),
+  };
+  for (let i = 0; i < 10; i++) agents[`s${i}`] = mk(`s${i}`, { parent: 'work1', role: 'Explore', name: `s${i}`, status: i === 9 ? 'working' : 'idle', joinedAt: i });
+  agents.sGone = mk('sGone', { parent: 'work1', status: 'offline' });
+  const state = { agents, teams: { t1: { id: 't1', hue: 10, order: 0 }, t2: { id: 't2', hue: 20, order: 1 } } };
+  const r = buildRoster(state, 1000);
+  assert.deepEqual(r.map((x) => x.id), ['work1', 'work2', 'idle1', 'done1']);
+  assert.equal(r[0].subs.length, 8);
+  assert.equal(r[0].moreSubs, 2);
+  assert.equal(r[0].subs[0].id, 's9');
+  assert.equal(r[0].subs[0].name, 'work1-s9');
+  assert.equal(r[0].hue, 10);
+  assert.ok(r[0].role && r[0].rel);
+  assert.equal(r[1].subs.length, 0);
+  assert.equal(r[1].moreSubs, 0);
 });

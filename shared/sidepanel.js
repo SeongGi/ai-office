@@ -1,4 +1,5 @@
 // Pure helpers for the side panel. No DOM, so node:test can import them.
+import { describeJob, displayName } from './role.js';
 import { initialToolState, stepToolRoom, toolRoom } from './places.js';
 
 export const TOOL_CLASSES = ['library', 'server', 'search', 'other'];
@@ -56,7 +57,7 @@ export function buildRows(state, now, limit = TIMELINE_MAX) {
     const team = state.teams[a.team];
     for (const h of a.history ?? []) {
       if (!h.text) continue;
-      rows.push({ agentId: a.id, name: a.name, hue: team?.hue ?? 0, ts: h.ts, kind: h.kind, text: clipText(h.text) });
+      rows.push({ agentId: a.id, name: displayName(a, state.agents), hue: team?.hue ?? 0, ts: h.ts, kind: h.kind, text: clipText(h.text) });
     }
   }
   rows.sort((x, y) => y.ts - x.ts);
@@ -99,4 +100,43 @@ export function liveRoomCounts(memo, agents, nowMs) {
   }
   for (const id of memo.keys()) if (!agents[id]) memo.delete(id);
   return out;
+}
+
+export const MAX_SUBS = 8;
+const ACTIVE = new Set(['working', 'thinking', 'waiting']);
+
+function entry(a, name, now) {
+  const job = describeJob(a);
+  return {
+    id: a.id,
+    name,
+    hue: 0,
+    status: a.status,
+    role: job.role,
+    doing: job.doing,
+    kind: job.kind,
+    rel: relTime(a.statusSince ?? a.lastSeen ?? now, now),
+  };
+}
+
+/** 직원 목록: 메인 에이전트 순서(일하는 쪽 먼저, 퇴근은 뒤)와 그 밑의 서브에이전트. offline은 뺀다. */
+export function buildRoster(state, now) {
+  const agents = Object.values(state.agents);
+  const teamOrder = (a) => state.teams[a.team]?.order ?? 0;
+  const rank = (a) => (ACTIVE.has(a.status) ? 0 : 1);
+  const subsOf = new Map();
+  for (const a of agents) {
+    if (!a.parent || a.status === 'offline') continue;
+    if (!subsOf.has(a.parent)) subsOf.set(a.parent, []);
+    subsOf.get(a.parent).push(a);
+  }
+  const mains = agents
+    .filter((a) => !a.parent && a.status !== 'offline')
+    .sort((x, y) => rank(x) - rank(y) || teamOrder(x) - teamOrder(y) || String(x.name).localeCompare(String(y.name)));
+  return mains.map((m) => {
+    const hue = state.teams[m.team]?.hue ?? 0;
+    const all = (subsOf.get(m.id) ?? []).sort((x, y) => rank(x) - rank(y) || (x.joinedAt ?? 0) - (y.joinedAt ?? 0) || String(x.name).localeCompare(String(y.name)));
+    const subs = all.slice(0, MAX_SUBS).map((s) => ({ ...entry(s, displayName(s, state.agents), now), hue }));
+    return { ...entry(m, m.name, now), hue, subs, moreSubs: Math.max(0, all.length - MAX_SUBS) };
+  });
 }

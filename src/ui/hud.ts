@@ -2,7 +2,7 @@ import type { Agent, WorldState } from '../../shared/protocol';
 import type { ConnectionMode } from '../core/store';
 import type { Anchor } from '../world/World';
 import { looksFor, shirtFor, sourceLabel, STATUS_COLORS, teamAccent } from '../world/palette';
-import { describeJob, isWatcher } from '../../shared/role';
+import { describeJob, displayName, isWatcher } from '../../shared/role';
 import { CARD_KO, PILL_KO, PILL_MEETING_KO, pillDetail, STATUS_LABEL_KO as STATUS_LABEL } from './labels';
 import { meetingCovers } from '../../shared/places';
 import { controlAllowed, dismissAgent, renameAgent, sendInstruction } from '../core/connection';
@@ -297,7 +297,7 @@ export class Hud {
     }
     if (this.editing === a.id && this.card.querySelector('.name-input')) return;
     const canSend = this.mode === 'live' && controlAllowed();
-    const key = `${a.id}|${a.name}|${a.status}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${a.lastPrompt}|${a.lastReply}|${canSend}|${Math.floor(Date.now() / 10000)}`;
+    const key = `${a.id}|${displayName(a, s.agents)}|${a.name}|${a.status}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${a.lastPrompt}|${a.lastReply}|${canSend}|${Math.floor(Date.now() / 10000)}`;
     if (key === this.cardKey) return;
     this.cardKey = key;
     const team = s.teams[a.team];
@@ -352,7 +352,7 @@ export class Hud {
         <span class="avatar" style="--shirt:${shirtFor(a.role)};--skin:${look.skin};--hair:${look.hair}" aria-hidden="true"><i></i></span>
         <div class="who">
           <div class="name-row">
-            <h2>${esc(a.name)}</h2>
+            <h2>${esc(displayName(a, s.agents))}</h2>
             ${canRename ? `<button type="button" class="icon-btn name-edit" aria-label="${CARD_KO.rename}" title="${CARD_KO.rename}">${pencil.replace('<svg ', '<svg aria-hidden="true" focusable="false" class="icon" ')}</button>` : ''}
           </div>
           <p>${esc(team?.name || a.team)}의 ${esc(a.role)}</p>
@@ -554,7 +554,7 @@ export class Hud {
       seen.add(an.id);
       let tag = this.tags.get(an.id);
       if (!tag) tag = this.makeTag(agent);
-      this.updateTag(tag, agent, agent.status !== 'offline' && meetingCovers(s.meeting, agent));
+      this.updateTag(tag, agent, displayName(agent, s.agents), agent.status !== 'offline' && meetingCovers(s.meeting, agent));
       const hot = an.id === this.hovered || an.id === this.selected;
       // Far away the full tag would be tiny and pile up: show the name only (full tag on hover or select).
       const compact = !hot && an.depth > (tag.compact ? COMPACT_OFF : COMPACT_ON);
@@ -769,12 +769,12 @@ export class Hud {
     return tag;
   }
 
-  private updateTag(tag: Tag, a: Agent, inMeeting: boolean) {
-    const key = `${a.name}|${a.role}|${a.status}|${a.activity}|${inMeeting}|${a.lastPrompt}`;
+  private updateTag(tag: Tag, a: Agent, shown: string, inMeeting: boolean) {
+    const key = `${shown}|${a.name}|${a.role}|${a.status}|${a.activity}|${inMeeting}|${a.lastPrompt}`;
     if (key === tag.key) return;
     tag.key = key;
     tag.dirty = true;
-    tag.name.textContent = a.name;
+    tag.name.textContent = shown;
     tag.role.textContent = a.role.toLowerCase() === a.name.toLowerCase() ? '' : a.role;
     // 직무 이름은 이름표가 짧게 유지될 때만 붙인다(이름과 직무 합쳐 16자 이하).
     const jobRole = describeJob(a).role;

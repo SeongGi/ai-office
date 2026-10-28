@@ -11,3 +11,4 @@ export interface JobInfo {
 
 export function describeJob(agent: Agent): JobInfo;
 export function isWatcher(agent: Pick<Agent, 'source' | 'parent'>): boolean;
+export function displayName(agent: Pick<Agent, 'name' | 'role' | 'parent'>, agents: Record<string, Pick<Agent, 'name'>>): string;
