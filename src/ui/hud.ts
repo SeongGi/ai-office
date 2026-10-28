@@ -139,8 +139,6 @@ export class Hud {
   private themeBtn: HTMLButtonElement;
   private teamsKey = '';
   private cardKey = '';
-  private leaveArmedAt = 0;
-  private sendArmedAt = 0;
   /** 직원마다 쓰던 지시 글, 결과 한 줄, 서버가 막은 이유. 카드를 다시 그려도 남는다. */
   private drafts = new Map<string, string>();
   private sendNotes = new Map<string, string>();
@@ -394,35 +392,20 @@ export class Hud {
     this.card.querySelector('.name-edit')?.addEventListener('click', () => this.startRename(a));
     const leaveBtn = this.card.querySelector<HTMLButtonElement>('.leave-btn');
     leaveBtn?.addEventListener('click', () => {
-      const now = Date.now();
-      if (now - this.leaveArmedAt < 3000) {
-        this.leaveArmedAt = 0;
-        leaveBtn.disabled = true;
-        void dismissAgent(a.id, CARD_KO.leaveActivity).then((r) => {
-          if (r.ok) {
-            this.actions.select(null);
-            return;
-          }
-          // 거절되면 내보내지 않는다. 사유를 카드 안에 5초 보여 준다.
-          this.leaveNotes.set(a.id, r.reason || CARD_KO.leaveRefused);
-          this.cardKey = '';
-          window.setTimeout(() => {
-            this.leaveNotes.delete(a.id);
-            this.cardKey = '';
-          }, 5000);
-        });
-        return;
-      }
-      this.leaveArmedAt = now;
-      leaveBtn.textContent = CARD_KO.leaveConfirm;
-      leaveBtn.classList.add('armed');
-      window.setTimeout(() => {
-        if (leaveBtn.isConnected && this.leaveArmedAt === now) {
-          this.leaveArmedAt = 0;
-          leaveBtn.textContent = CARD_KO.leave;
-          leaveBtn.classList.remove('armed');
+      leaveBtn.disabled = true;
+      void dismissAgent(a.id, CARD_KO.leaveActivity).then((r) => {
+        if (r.ok) {
+          this.actions.select(null);
+          return;
         }
-      }, 3000);
+        // 거절되면 내보내지 않는다. 사유를 카드 안에 5초 보여 준다.
+        this.leaveNotes.set(a.id, r.reason || CARD_KO.leaveRefused);
+        this.cardKey = '';
+        window.setTimeout(() => {
+          this.leaveNotes.delete(a.id);
+          this.cardKey = '';
+        }, 5000);
+      });
     });
     const sendText = this.card.querySelector<HTMLTextAreaElement>('.send-text');
     if (sendText) {
@@ -443,27 +426,7 @@ export class Hud {
       sendBtn.addEventListener('click', () => {
         const text = sendText.value.trim();
         if (!text) return;
-        const now = Date.now();
-        if (now - this.sendArmedAt >= 3000) {
-          // 첫 번째 누름: 누구에게 가는지 보여 주고 3초 동안 한 번 더 누르기를 기다린다.
-          this.sendArmedAt = now;
-          sendBtn.textContent = CARD_KO.sendConfirm;
-          sendBtn.classList.add('armed');
-          sendNote.textContent = CARD_KO.sendTarget(a.name);
-          window.setTimeout(() => {
-            if (sendBtn.isConnected && this.sendArmedAt === now) {
-              this.sendArmedAt = 0;
-              sendBtn.textContent = CARD_KO.send;
-              sendBtn.classList.remove('armed');
-              sendNote.textContent = this.sendNotes.get(a.id) || '';
-            }
-          }, 3000);
-          return;
-        }
-        this.sendArmedAt = 0;
         sendBtn.disabled = true;
-        sendBtn.classList.remove('armed');
-        sendBtn.textContent = CARD_KO.send;
         sendNote.textContent = CARD_KO.sendWorking;
         this.sending.add(a.id);
         void sendInstruction(a.id, text).then((r) => {
