@@ -40,6 +40,7 @@ import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle, star, text, textWidth } from './draw';
 import { drawServerLeds, NEWHIRE_MIN_W, TOOL_AISLE, toolSpots } from './furniture';
 import { Npcs } from './npcs';
+import { FarewellChat } from '../world/farewellChat';
 import { PALETTES2D, type ThemeName } from './palette2d';
 import { drawScene, ELEV, sceneBounds, sceneKey, type Rect4, type SceneData } from './scene';
 import './world2d.css';
@@ -119,6 +120,7 @@ export class World2D implements FloorWorld {
   private bubbleWidths = new Map<string, number>();
   private life = new BreakLife();
   private npcs = new Npcs();
+  private chat = new FarewellChat(20261028);
   private letters: Letter[] = [];
   private ripples: Ripple[] = [];
   private last = performance.now();
@@ -513,6 +515,7 @@ export class World2D implements FloorWorld {
     if (s.main && !this.reduced) {
       s.farewell = true;
       this.farewells++;
+      this.chat.setLeaver(this.state?.agents[id]?.name ?? '');
       this.updatePlaces();
     }
     if (this.reduced) return this.dropAgent(id);
@@ -815,6 +818,7 @@ export class World2D implements FloorWorld {
     // After the break room life, which sets the arms of cats it owns: the celebration raises them on top.
     for (const a of this.agents.values()) if (a.partyArms > 0) a.act.cheer = Math.max(a.act.cheer, a.partyArms);
     this.npcs.update(this.elapsed, this.elevOpen, this.reduced);
+    this.updateFarewellTalk();
     this.elevOpen = damp(this.elevOpen, near ? 1 : 0, 5, dt);
     for (const l of this.letters) l.t += dt / 1.1;
     this.letters = this.letters.filter((l) => {
@@ -962,6 +966,7 @@ export class World2D implements FloorWorld {
     }
 
     this.drawBubbles(ctx, t, k);
+    this.drawFarewellBubbles(ctx, k);
     this.drawToolTags(ctx, k);
     if (!this.reduced) this.drawParty(ctx, k);
 
@@ -1080,6 +1085,60 @@ export class World2D implements FloorWorld {
           ctx.restore();
         }
       }
+      ctx.restore();
+    }
+  }
+
+  /** Cats gathered for a leaver take turns talking; the leaver says one goodbye near the elevator. */
+  private updateFarewellTalk() {
+    const ids: string[] = [];
+    for (const [id, a] of this.agents) if (a.place === 'farewell' && a.mode === 'standing' && !a.leaving) ids.push(id);
+    ids.sort();
+    this.chat.update(this.elapsed, this.farewells > 0, ids);
+    if (this.farewells <= 0) return;
+    for (const [id, a] of this.agents) {
+      if (a.farewell && a.mode === 'leaving' && Math.hypot(a.x - ELEVATOR.x, a.z - (ELEVATOR.z + 1.2)) < 4.5) this.chat.sayBye(id, this.elapsed);
+      if (this.chat.textFor(id)) a.say(0.15);
+    }
+  }
+
+  /** The farewell lines as white speech bubbles over the talking cat, same look as the decor cats. */
+  private drawFarewellBubbles(ctx: CanvasRenderingContext2D, k: number) {
+    if (this.farewells <= 0) return;
+    for (const [id, a] of this.agents) {
+      const str = this.chat.textFor(id);
+      if (!str || a.mode === 'gone') continue;
+      const age = this.chat.ageOf(id, this.elapsed);
+      const dur = this.chat.durOf(id);
+      // reduced motion: one static line, no fade
+      const u = this.reduced ? 0.5 : age / dur;
+      if (u < 0 || u > 1) continue;
+      const alpha = Math.min(1, u / 0.08, (1 - u) / 0.15);
+      let shown = str;
+      if (str.length > 9) {
+        let at = -1;
+        for (let i = 0; i < str.length; i++) if (str[i] === ' ' && (at < 0 || Math.abs(i - str.length / 2) < Math.abs(at - str.length / 2))) at = i;
+        if (at > 0) shown = `${str.slice(0, at)}\n${str.slice(at + 1)}`;
+      }
+      const lines = shown.split('\n');
+      let tw = 0;
+      for (const line of lines) tw = Math.max(tw, textWidth(ctx, line, 0.22, 800));
+      const bw = (tw + 0.34) * k;
+      const lh = 0.27 * k;
+      const bh = lh * lines.length + 0.2 * k;
+      const bottom = a.z - (HEAD_TOP + 0.3 - 0.2 * a.sit + a.hop) * k;
+      const y = bottom - bh / 2;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(a.x - 0.1 * k, bottom - 0.02 * k);
+      ctx.lineTo(a.x, bottom + 0.14 * k);
+      ctx.lineTo(a.x + 0.1 * k, bottom - 0.02 * k);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      rbox(ctx, a.x, y, bw, bh, '#ffffff', 0.2 * k, { lw: 0.035 * k, line: '#e2c9bd', shadow: false });
+      for (const [i, line] of lines.entries()) text(ctx, line, a.x, y + (i - (lines.length - 1) / 2) * lh + 0.01 * k, 0.22 * k, '#5a3a40', { weight: 800 });
       ctx.restore();
     }
   }

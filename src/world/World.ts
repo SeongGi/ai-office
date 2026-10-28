@@ -51,6 +51,7 @@ import {
 import { TOOL_AISLE, toolSpots } from './toolRooms';
 import { Building } from './Building';
 import { Elevator, ELEVATOR_OPEN_RANGE } from './Elevator';
+import { FarewellChat } from './farewellChat';
 import { setNightGlow, setServerLeds } from './props';
 import { applyThemeToMaterials } from './materials';
 import { prefersReducedMotion } from './motion';
@@ -108,6 +109,7 @@ export class World {
   /** When each agent's status last became idle (performance.now), for the lounge rule. */
   private idleSince = new Map<string, number>();
   private farewells = 0;
+  private chat = new FarewellChat(20261028);
   private placeCheckAt = 0;
   private toolStates = new Map<string, ToolState>();
   /** Which spot each cat holds in a tool room (library, server, search), so two cats never stand on one spot. */
@@ -459,6 +461,22 @@ export class World {
     this.building.setToolCounts(inRoom);
   }
 
+  /** Cats gathered for a leaver take turns talking in the thinking-cloud bubble; the leaver says one goodbye near the elevator. */
+  private updateFarewellTalk() {
+    const ids: string[] = [];
+    for (const [id, s] of this.agents) if (s.place === 'farewell' && s.character.mode === 'standing' && !s.leaving) ids.push(id);
+    ids.sort();
+    this.chat.update(this.elapsed, this.farewells > 0, ids);
+    if (this.farewells <= 0) return;
+    for (const [id, s] of this.agents) {
+      if (s.farewell && s.character.mode === 'leaving' && s.character.root.getWorldPosition(this.tmpV).distanceTo(this.elevator.front) < 4.5) this.chat.sayBye(id, this.elapsed);
+      if (s.place !== 'farewell' && !s.farewell) continue;
+      const str = this.chat.textFor(id);
+      if (str) s.character.setBubble(1, str, '', true);
+      else if (s.place === 'farewell' || s.farewell) s.character.setBubble(0, '', '', false);
+    }
+  }
+
   /** Where an agent stands to wave off a leaver: the corridor beside the elevator, in rows. */
   private farewellSpot(team: string, agentId: string) {
     const room = this.layout.get(team);
@@ -531,6 +549,7 @@ export class World {
     if (s.main && !this.reduced) {
       s.farewell = true;
       this.farewells++;
+      this.chat.setLeaver(this.state?.agents[id]?.name ?? '');
       this.updatePlaces();
     }
     const room = this.layout.get(s.team);
@@ -869,6 +888,7 @@ export class World {
         s.desk.update(dt, this.elapsed, agent, dark, s.character.isSeated(), s.character.root.rotation.y, near, this.reduced || this.crowded);
       }
     }
+    this.updateFarewellTalk();
     let elevatorNear = false;
     for (const s of this.agents.values()) {
       if (!s.leaving && s.character.mode !== 'walking') continue;
