@@ -138,7 +138,7 @@ test('send: 가드(일하는 중, 서브에이전트, 터미널 없음, 권한 �
     assert.match((await (await send(base, 'busy', 'hi')).json()).reason, /일하는 중/);
     assert.match((await (await send(base, 'wait', 'hi')).json()).reason, /일하는 중/);
     assert.match((await (await send(base, 'child', 'hi')).json()).reason, /서브에이전트/);
-    assert.match((await (await send(base, 'noterm', 'hi')).json()).reason, /터미널 정보/);
+    assert.match((await (await send(base, 'noterm', 'hi')).json()).reason, /연결 전이에요/);
     assert.match((await (await send(base, 'ghost', 'hi')).json()).reason, /찾지 못했어요/);
     const blocked = await (await send(base, 'bypass', 'hi')).json();
     assert.deepEqual(blocked, { sent: false, reason: '권한 확인 없이 도는 세션이라 막았어요' });
@@ -520,4 +520,28 @@ test('waitKind: 알림 훅이 알리고 waiting을 벗어나면 지워진다', (
   send({ type: 'status', status: 'waiting', waitKind: 'permission' });
   send({ type: 'status', status: 'thinking' });
   assert.equal(state.agents.a.waitKind, undefined);
+});
+
+test('routes: 터미널과 기기 연결은 파일에 남아 서버를 다시 띄워도 쉬는 세션에 닿는다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-routes-'));
+  const routesPath = join(dir, 'routes.json');
+  const orca = fakeOrca([{ handle: TERM, agentIdentity: 'claude' }]);
+  const opts = { ...ADMIN, device: '서버기기', routesPath, execFileImpl: orca };
+  await withServer(opts, async (base) => {
+    await joinAgent(base, 'lap', { device: '서버기기' });
+    for (let i = 0; i < 50 && !(await readFile(routesPath).catch(() => null)); i++) await new Promise((r) => setTimeout(r, 20));
+  });
+  assert.deepEqual(JSON.parse(await readFile(routesPath, 'utf8')), { terminals: { lap: TERM }, devices: { lap: '서버기기' } });
+  // 다시 뜬 서버는 세션이 훅 없이 seed로만 올라와도 터미널을 안다.
+  await withServer(opts, async (base) => {
+    await joinAgent(base, 'lap', { terminal: undefined, device: undefined });
+    const res = await postJson(base, '/send', { agent: 'lap', text: 'hi' }, asMe);
+    assert.deepEqual(await res.json(), { sent: true });
+  });
+  // 깨진 파일은 빈 채로 시작한다.
+  await writeFile(routesPath, '{깨진');
+  await withServer(opts, async (base) => {
+    await joinAgent(base, 'lap', { terminal: undefined, device: undefined });
+    assert.match((await (await postJson(base, '/send', { agent: 'lap', text: 'hi' }, asMe)).json()).reason, /연결 전이에요/);
+  });
 });

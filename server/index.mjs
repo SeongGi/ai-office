@@ -75,6 +75,8 @@ export function startServer({
   auditPath = process.env.AGENT_FLOOR_AUDIT || resolve(here, '../data/audit.log'),
   // 관리자가 고친 직원 이름을 남기는 파일. 기본은 감사 기록과 같은 폴더.
   namesPath = process.env.AGENT_FLOOR_NAMES || join(dirname(auditPath), 'names.json'),
+  // 세션의 터미널과 기기 연결을 남기는 파일. 기본은 감사 기록과 같은 폴더.
+  routesPath = process.env.AGENT_FLOOR_ROUTES || join(dirname(auditPath), 'routes.json'),
 } = {}) {
   const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
   const adminList = listOf(admins);
@@ -138,7 +140,7 @@ export function startServer({
     const handle = terminals.get(id);
     if (!agent) return { reason: '직원을 찾지 못했어요' };
     if (agent.parent) return { reason: `서브에이전트는 ${doing}지 않아요` };
-    if (!handle) return { reason: '터미널 정보가 없어요' };
+    if (!handle) return { reason: '아직 이 세션과 연결 전이에요. 세션이 한 번 움직이면 연결돼요' };
     if (['thinking', 'working'].includes(agent.status)) return { reason: `일하는 중이라 ${doing}지 않았어요`, busy: true };
     if (agent.status === 'waiting') {
       // 입력 대기(idle)는 쉬는 중과 같다. 권한 확인은 /exit 글자가 대화상자의 답이 될 수 있어 막는다.
@@ -277,6 +279,32 @@ export function startServer({
     return saving;
   }
 
+  // 세션의 터미널과 기기도 파일로 남겨, 서버를 다시 띄워도 쉬는 세션에 지시와 퇴사가 닿게 한다.
+  try {
+    const saved = JSON.parse(readFileSync(routesPath, 'utf8'));
+    for (const [id, h] of Object.entries(saved?.terminals ?? {})) {
+      if (typeof h === 'string' && /^term_[\w-]{8,64}$/.test(h)) terminals.set(id.slice(0, 128), h);
+    }
+    for (const [id, d] of Object.entries(saved?.devices ?? {})) {
+      if (typeof d === 'string' && d.length <= 48) devices.set(id.slice(0, 128), d);
+    }
+  } catch {
+    // 파일이 없거나 깨졌으면 빈 채로 시작한다. 세션이 다시 훅을 보내면 채워진다.
+  }
+  let savingRoutes = Promise.resolve();
+  function saveRoutes() {
+    savingRoutes = savingRoutes.then(async () => {
+      try {
+        await mkdir(dirname(routesPath), { recursive: true });
+        const tmp = `${routesPath}.tmp`;
+        await writeFile(tmp, JSON.stringify({ terminals: Object.fromEntries(terminals), devices: Object.fromEntries(devices) }));
+        await rename(tmp, routesPath);
+      } catch {
+        // 저장 실패가 이벤트 처리를 막으면 안 된다.
+      }
+    });
+  }
+
   /** 정규화, 방을 정하고 적용, 방송. 내부에서만 쓴다(rename도 여기로 들어온다). */
   function applyAndBroadcast(raw, tweak) {
     const ev = normalizeEvent(raw);
@@ -291,12 +319,16 @@ export function startServer({
   function ingest(raw) {
     // rename은 관리자 길(POST /rename)로만 만든다. 바깥 이벤트로는 받지 않는다.
     if (raw && raw.type === 'rename') return false;
+    let routesChanged = false;
     if (raw && typeof raw.agent === 'string' && typeof raw.terminal === 'string' && /^term_[\w-]{8,64}$/.test(raw.terminal)) {
+      if (terminals.get(raw.agent) !== raw.terminal) routesChanged = true;
       terminals.set(raw.agent, raw.terminal);
     }
     if (raw && typeof raw.agent === 'string' && typeof raw.device === 'string' && raw.device.length <= 48) {
+      if (devices.get(raw.agent) !== raw.device) routesChanged = true;
       devices.set(raw.agent, raw.device);
     }
+    if (routesChanged) saveRoutes();
     return applyAndBroadcast(raw, (ev) => {
       if (!ev.name || !ev.agent || ev.parent || ev.subagent) return;
       if (!DEFAULT_NAMES.has(ev.name)) remember(hookNames, ev.agent, ev.name);
