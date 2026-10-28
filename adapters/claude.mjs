@@ -106,8 +106,12 @@ export function fromClaude(input, opts = {}) {
       // 도구가 실패했다. 다음 도구 훅이나 멈춤 훅이 오면 지워지고, 안 와도 화면이 4초 뒤 생각 중으로 돌린다(effectiveStatus).
       return [{ type: 'status', ...actor, status: 'error', activity: `${TOOL_FAIL_PREFIX}: ${shortToolName(tool) || '도구'}` }];
 
-    case 'Notification':
-      return [{ type: 'status', ...base, status: 'waiting', activity: input.message || '답을 기다려요' }];
+    case 'Notification': {
+      // 알림 종류 필드 이름은 문서에 확실하지 않아 notification_type과 type을 모두 본다. 모르는 값은 비운다.
+      const kind = String(input.notification_type ?? input.type ?? '');
+      const waitKind = kind === 'idle_prompt' ? 'idle' : kind === 'permission_prompt' || kind === 'elicitation_dialog' ? 'permission' : undefined;
+      return [{ type: 'status', ...base, status: 'waiting', activity: input.message || '답을 기다려요', ...(waitKind ? { waitKind } : {}) }];
+    }
 
     case 'Stop': {
       // Claude Code가 마지막 답을 주면 그대로 쓰고, 없으면 세션 기록 끝에서 찾는다.

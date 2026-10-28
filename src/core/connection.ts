@@ -42,27 +42,41 @@ export function isDemoRunning() {
   return demoRunning;
 }
 
-/** 화면에서만 직원을 내보낸다. 서버에 leave 이벤트만 보내고 세션 기록은 건드리지 않는다. */
-export function dismissAgent(agent: string, activity: string) {
+export interface DismissResult {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * 퇴사시킨다. 서버가 상태를 보고 판단해야 하므로 /close를 먼저 부르고 답을 본다.
+ * 닫혔거나(true, 'queued') 닫을 수 있는 Claude 세션이 아니면(이미 퇴근, 터미널 모름) leave를 보낸다.
+ * 일하는 중이거나 권한 확인 중이라 거절하면 내보내지 않고 사유를 돌려준다.
+ */
+export async function dismissAgent(agent: string, activity: string): Promise<DismissResult> {
   if (demoRunning) {
     store.applyLocal({ type: 'leave', agent, activity, ts: Date.now() });
-    return;
+    return { ok: true };
   }
-  // 세션도 같이 닫는다. 서버가 상태를 보고 판단해야 하므로 /close를 먼저 부르고, 끝난 뒤 leave를 보낸다.
-  // 서버가 조건(메인, 쉬는 중, Claude 터미널)을 못 맞추면 화면 퇴사만 남는다.
   const leave = () =>
     fetch(`${serverBase()}/events`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'leave', agent, activity }),
     }).catch(() => {});
-  void fetch(`${serverBase()}/close`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ agent }),
-  })
-    .catch(() => {})
-    .then(leave);
+  let body: { closed?: boolean | 'queued'; reason?: string; busy?: boolean } | null;
+  try {
+    const res = await fetch(`${serverBase()}/close`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent }),
+    });
+    body = await res.json().catch(() => null);
+  } catch {
+    return { ok: false, reason: '서버에 닿지 못했어요' };
+  }
+  if (body?.busy === true) return { ok: false, reason: body.reason || '지금은 닫지 않았어요' };
+  await leave();
+  return { ok: true };
 }
 
 /** 이 화면에서 지시를 보낼 수 있는지. /whoami를 한 번만 물어 기억한다. 서버가 없으면 false. */

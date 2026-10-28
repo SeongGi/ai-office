@@ -8,6 +8,8 @@ export const STATUSES = ['idle', 'thinking', 'working', 'waiting', 'done', 'erro
 
 export const EVENT_TYPES = ['join', 'status', 'tool', 'message', 'task', 'leave', 'reset', 'meeting', 'rename'];
 
+export const WAIT_KINDS = ['idle', 'permission'];
+
 export const MEETING_MS = 10 * 60_000;
 const SYSTEM_AGENT = 'system';
 
@@ -98,6 +100,8 @@ export function normalizeEvent(raw, now = Date.now()) {
     lastPrompt: clip(raw.lastPrompt, 300),
     lastReply: clip(raw.lastReply, 600),
     permission: clip(raw.permission, 24),
+    // 기다리는 이유. 알림 훅이 알려 줄 때만 있다: idle(입력 대기) 또는 permission(권한 확인).
+    waitKind: WAIT_KINDS.includes(raw.waitKind) ? raw.waitKind : undefined,
     to: undefined,
     subagent: undefined,
   };
@@ -332,6 +336,12 @@ export function applyEvent(state, rawEv) {
   }
   // 상태가 바뀐 때만 갱신한다. 같은 상태를 다시 알리는 이벤트는 lastSeen만 올린다.
   if (agent.status !== statusBefore) agent.statusSince = now;
+  // 기다리는 이유는 waiting일 때만 갖는다. 새 waiting 알림은 이유를 새로 정한다(모르면 비운다).
+  if (agent.status !== 'waiting') delete agent.waitKind;
+  else if ((ev.type === 'status' || ev.type === 'join') && ev.status === 'waiting') {
+    if (ev.waitKind) agent.waitKind = ev.waitKind;
+    else delete agent.waitKind;
+  }
   return { state, effects };
 }
 

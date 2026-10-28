@@ -475,3 +475,49 @@ test('rename: /events로 들어온 rename은 메인 포트와 기계용 포트 �
     assert.equal((await postJson(m, '/rename', { agent: AG, name: 'x' }, auth)).status, 404, '기계용 포트에는 길이 없다');
   });
 });
+
+test('guard: waiting은 이유로 가른다(idle 허용, permission 거절, 모르면 15분 뒤 허용)', async () => {
+  const orca = fakeOrca([{ handle: TERM, agentIdentity: 'claude' }]);
+  const admin = { admins: ME, trustProxyEmail: true, device: '서버기기', execFileImpl: orca };
+  const close = async (base, agent) => (await postJson(base, '/close', { agent }, asMe)).json();
+  const old = Date.now() - 20 * 60_000;
+  await withServer(admin, async (base) => {
+    await joinAgent(base, 'idleWait', { status: 'waiting', waitKind: 'idle' });
+    await joinAgent(base, 'permWait', { status: 'waiting', waitKind: 'permission' });
+    await joinAgent(base, 'permOld', { status: 'waiting', waitKind: 'permission', ts: old });
+    await joinAgent(base, 'newUnknown', { status: 'waiting' });
+    await joinAgent(base, 'oldUnknown', { status: 'waiting', ts: old });
+    await joinAgent(base, 'busy', { status: 'thinking' });
+    assert.deepEqual(await close(base, 'idleWait'), { closed: 'queued' });
+    assert.equal((await close(base, 'permWait')).reason, '권한 확인을 기다리는 중이라 닫지 않았어요');
+    assert.match((await close(base, 'permOld')).reason, /권한 확인/, '권한 확인은 오래돼도 막는다');
+    assert.match((await close(base, 'newUnknown')).reason, /일하는 중/);
+    assert.deepEqual(await close(base, 'oldUnknown'), { closed: 'queued' });
+    assert.match((await close(base, 'busy')).reason, /일하는 중/);
+    // 지시 보내기도 같은 검사를 쓴다. 권한 우회 세션 규칙은 그대로다.
+    const send = async (agent) => (await postJson(base, '/send', { agent, text: 'hi' }, asMe)).json();
+    assert.deepEqual(await send('idleWait'), { sent: 'queued' });
+    assert.match((await send('permWait')).reason, /권한 확인/);
+    await joinAgent(base, 'bypassIdle', { status: 'waiting', waitKind: 'idle', permission: 'bypassPermissions' });
+    assert.match((await send('bypassIdle')).reason, /권한 확인 없이/);
+  });
+});
+
+test('waitKind: 알림 훅이 알리고 waiting을 벗어나면 지워진다', () => {
+  const hook = (extra) => fromClaude({ hook_event_name: 'Notification', session_id: 'sess1234', cwd: '/x/shop', ...extra })[0];
+  assert.equal(hook({ notification_type: 'idle_prompt' }).waitKind, 'idle');
+  assert.equal(hook({ notification_type: 'permission_prompt' }).waitKind, 'permission');
+  assert.equal(hook({ notification_type: 'elicitation_dialog' }).waitKind, 'permission');
+  assert.equal(hook({ type: 'idle_prompt' }).waitKind, 'idle', 'type 필드도 본다');
+  assert.equal('waitKind' in hook({ notification_type: 'auth_success' }), false);
+  assert.equal('waitKind' in hook({}), false);
+  const state = createState();
+  const send = (ev) => applyEvent(state, normalizeEvent({ agent: 'a', team: 't', ...ev }));
+  send({ type: 'status', status: 'waiting', waitKind: 'idle' });
+  assert.equal(state.agents.a.waitKind, 'idle');
+  send({ type: 'status', status: 'waiting', waitKind: 'bogus' });
+  assert.equal(state.agents.a.waitKind, undefined, '새 알림이 이유를 모르면 비운다');
+  send({ type: 'status', status: 'waiting', waitKind: 'permission' });
+  send({ type: 'status', status: 'thinking' });
+  assert.equal(state.agents.a.waitKind, undefined);
+});

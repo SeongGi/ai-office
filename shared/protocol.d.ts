@@ -1,4 +1,5 @@
 export type Status = 'idle' | 'thinking' | 'working' | 'waiting' | 'done' | 'error' | 'offline';
+export type WaitKind = 'idle' | 'permission';
 export type EventType = 'join' | 'status' | 'tool' | 'message' | 'task' | 'leave' | 'reset' | 'meeting' | 'rename';
 
 /** What clients POST to /events. Only `type` and `agent` are required. */
@@ -22,6 +23,7 @@ export interface InboundEvent {
   lastPrompt?: string;
   lastReply?: string;
   permission?: string;
+  waitKind?: WaitKind;
   subagent?: { key?: string; type?: string };
   meeting?: 'start' | 'end';
   all?: boolean;
@@ -50,6 +52,7 @@ export interface FloorEvent {
   lastPrompt?: string;
   lastReply?: string;
   permission?: string;
+  waitKind?: WaitKind;
   meeting?: 'start' | 'end';
   all?: boolean;
 }
@@ -90,6 +93,8 @@ export interface Agent {
   lastPrompt?: string;
   lastReply?: string;
   permission?: string;
+  /** waiting일 때만: idle(입력 대기), permission(권한 확인). 모르면 없다. */
+  waitKind?: WaitKind;
 }
 
 export interface Team {
@@ -121,6 +126,7 @@ export type Effect =
 
 export const PROTOCOL_VERSION: number;
 export const STATUSES: Status[];
+export const WAIT_KINDS: WaitKind[];
 export const MEETING_MS: number;
 export const EVENT_TYPES: EventType[];
 export function createState(): WorldState;

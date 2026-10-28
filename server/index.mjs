@@ -28,6 +28,8 @@ import { applyEvent, createState, normalizeEvent, sweep, PROTOCOL_VERSION } from
 const here = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 256 * 1024;
 const QUEUE_TTL_MS = 60_000;
+// 이유를 모르는 waiting을 입력 대기로 보는 기준 시간.
+const WAIT_UNKNOWN_MS = 15 * 60_000;
 const QUEUE_MAX = 200;
 const SEND_MAX_CHARS = 2000;
 const SEND_RATE_MAX = 6;
@@ -137,7 +139,14 @@ export function startServer({
     if (!agent) return { reason: '직원을 찾지 못했어요' };
     if (agent.parent) return { reason: `서브에이전트는 ${doing}지 않아요` };
     if (!handle) return { reason: '터미널 정보가 없어요' };
-    if (['thinking', 'working', 'waiting'].includes(agent.status)) return { reason: `일하는 중이라 ${doing}지 않았어요` };
+    if (['thinking', 'working'].includes(agent.status)) return { reason: `일하는 중이라 ${doing}지 않았어요`, busy: true };
+    if (agent.status === 'waiting') {
+      // 입력 대기(idle)는 쉬는 중과 같다. 권한 확인은 /exit 글자가 대화상자의 답이 될 수 있어 막는다.
+      // 이유를 모르는 waiting은 15분 넘게 이어졌을 때만 입력 대기로 본다.
+      if (agent.waitKind === 'permission') return { reason: `권한 확인을 기다리는 중이라 ${doing}지 않았어요`, busy: true };
+      const old = Date.now() - (agent.statusSince ?? agent.lastSeen ?? Date.now()) > WAIT_UNKNOWN_MS;
+      if (agent.waitKind !== 'idle' && !old) return { reason: `일하는 중이라 ${doing}지 않았어요`, busy: true };
+    }
     return { agent, handle };
   }
 
@@ -156,11 +165,11 @@ export function startServer({
   // 세션이 이 서버와 같은 기기에서 왔으면 바로 닫고, 아니면 그 기기의 close-agent에게 맡긴다.
   async function closeSession(id) {
     const g = guardSession(id, '닫');
-    if (!g.handle) return { closed: false, reason: g.reason };
+    if (!g.handle) return { closed: false, reason: g.reason, ...(g.busy ? { busy: true } : {}) };
     const owner = devices.get(id) || '';
     if (owner !== device) {
       const full = enqueue({ kind: 'close', agent: id, terminal: g.handle, device: owner });
-      return full ? { closed: false, reason: full } : { closed: 'queued' };
+      return full ? { closed: false, reason: full, busy: true } : { closed: 'queued' };
     }
     const result = await closeOrcaTerminal(g.handle, execFileImpl);
     if (result.closed) terminals.delete(id);
