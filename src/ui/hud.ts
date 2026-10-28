@@ -2,6 +2,7 @@ import type { Agent, WorldState } from '../../shared/protocol';
 import type { ConnectionMode } from '../core/store';
 import type { Anchor } from '../world/World';
 import { looksFor, shirtFor, sourceLabel, STATUS_COLORS, teamAccent } from '../world/palette';
+import { describeJob, isWatcher } from '../../shared/role';
 import { CARD_KO, PILL_KO, PILL_MEETING_KO, pillDetail, STATUS_LABEL_KO as STATUS_LABEL } from './labels';
 import { meetingCovers } from '../../shared/places';
 import { controlAllowed, dismissAgent, renameAgent, sendInstruction } from '../core/connection';
@@ -36,6 +37,7 @@ interface Tag {
   last: { t: string; o: string; z: string; near: boolean; sel: boolean };
   name: HTMLElement;
   role: HTMLElement;
+  job: HTMLElement;
   dot: HTMLElement;
   activity: HTMLElement;
   pill: HTMLElement;
@@ -64,6 +66,7 @@ interface Tag {
 }
 
 /** Tags switch to the name-only form beyond this depth (and back below the lower one). */
+const TAG_JOB_MAX = 16;
 const COMPACT_ON = 20;
 const COMPACT_OFF = 17;
 const PAD = 3;
@@ -141,6 +144,7 @@ export class Hud {
   /** 직원마다 쓰던 지시 글, 결과 한 줄, 서버가 막은 이유. 카드를 다시 그려도 남는다. */
   private drafts = new Map<string, string>();
   private sendNotes = new Map<string, string>();
+  private leaveNotes = new Map<string, string>();
   private sendBlocked = new Map<string, string>();
   private sending = new Set<string>();
   /** 이름을 고치는 중인 직원. 고치는 동안에는 입력칸이 지워지지 않도록 카드를 다시 그리지 않는다. */
@@ -304,12 +308,14 @@ export class Hud {
     const look = looksFor(a.id);
     const isMain = a.role === 'Lead' && !a.parent;
     const shortSession = (a.id.includes(':') ? a.id.split(':')[1] : a.id) || a.id;
-    const kind = isMain ? CARD_KO.mainSession : `${CARD_KO.subagent} (${a.role})`;
+    const info = describeJob(a);
+    const kind = isWatcher(a) ? info.kind : isMain ? CARD_KO.mainSession : `${CARD_KO.subagent} (${a.role})`;
     const lastTask = [...a.history].reverse().find((h) => h.kind === 'task' && h.text)?.text;
     const job = (isMain ? lastTask || team?.task : undefined) || a.activity || '아직 아무것도 없어요';
     const nowText = a.activity || '아직 아무것도 없어요';
+    const noLeave = isWatcher(a) ? CARD_KO.leaveWatcher : a.parent ? CARD_KO.leaveSub : '';
     const canRename = isMain && canSend && a.status !== 'offline';
-    const facts: [string, string][] = [[CARD_KO.kind, kind]];
+    const facts: [string, string][] = [[CARD_KO.kind, kind], [CARD_KO.jobRole, info.role], [CARD_KO.jobDoing, info.doing]];
     if (!isMain && a.parent) facts.push([CARD_KO.parent, parent ? `${parent.name} (${a.parent.split(':')[1] || a.parent})` : a.parent]);
     facts.push([CARD_KO.source, sourceLabel(a.source)], [CARD_KO.session, shortSession], [CARD_KO.project, team?.name || a.team]);
     facts.push([CARD_KO.model, a.model || CARD_KO.unknown]);
@@ -382,17 +388,29 @@ export class Hud {
           .join('')}
       </ol>
       <div class="leave-box">
-        <button type="button" class="leave-btn">${CARD_KO.leave}</button>
-        <p class="leave-note">${CARD_KO.leaveNote}</p>
+        ${noLeave ? '' : `<button type="button" class="leave-btn">${CARD_KO.leave}</button>`}
+        <p class="leave-note${!noLeave && this.leaveNotes.has(a.id) ? ' refused' : ''}">${esc(noLeave || this.leaveNotes.get(a.id) || CARD_KO.leaveNote)}</p>
       </div>`;
     this.card.querySelector('.name-edit')?.addEventListener('click', () => this.startRename(a));
-    const leaveBtn = this.card.querySelector<HTMLButtonElement>('.leave-btn')!;
-    leaveBtn.addEventListener('click', () => {
+    const leaveBtn = this.card.querySelector<HTMLButtonElement>('.leave-btn');
+    leaveBtn?.addEventListener('click', () => {
       const now = Date.now();
       if (now - this.leaveArmedAt < 3000) {
         this.leaveArmedAt = 0;
-        dismissAgent(a.id, CARD_KO.leaveActivity);
-        this.actions.select(null);
+        leaveBtn.disabled = true;
+        void dismissAgent(a.id, CARD_KO.leaveActivity).then((r) => {
+          if (r.ok) {
+            this.actions.select(null);
+            return;
+          }
+          // 거절되면 내보내지 않는다. 사유를 카드 안에 5초 보여 준다.
+          this.leaveNotes.set(a.id, r.reason || CARD_KO.leaveRefused);
+          this.cardKey = '';
+          window.setTimeout(() => {
+            this.leaveNotes.delete(a.id);
+            this.cardKey = '';
+          }, 5000);
+        });
         return;
       }
       this.leaveArmedAt = now;
@@ -714,13 +732,14 @@ export class Hud {
 
   private makeTag(agent: Agent): Tag {
     const root = el('div', 'tag');
-    root.innerHTML = `<div class="tag-line"><span class="dot"></span><b></b><span class="role"></span></div><div class="pill"></div><div class="activity"></div><i class="leader"></i>`;
+    root.innerHTML = `<div class="tag-line"><span class="dot"></span><b></b><span class="role"></span><span class="job"></span></div><div class="pill"></div><div class="activity"></div><i class="leader"></i>`;
     root.addEventListener('click', () => this.actions.select(agent.id));
     this.tagsLayer.append(root);
     const tag: Tag = {
       root,
       name: root.querySelector('b')!,
       role: root.querySelector('.role')!,
+      job: root.querySelector('.job')!,
       dot: root.querySelector('.dot')!,
       activity: root.querySelector('.activity')!,
       pill: root.querySelector('.pill')!,
@@ -751,12 +770,15 @@ export class Hud {
   }
 
   private updateTag(tag: Tag, a: Agent, inMeeting: boolean) {
-    const key = `${a.name}|${a.role}|${a.status}|${a.activity}|${inMeeting}`;
+    const key = `${a.name}|${a.role}|${a.status}|${a.activity}|${inMeeting}|${a.lastPrompt}`;
     if (key === tag.key) return;
     tag.key = key;
     tag.dirty = true;
     tag.name.textContent = a.name;
     tag.role.textContent = a.role.toLowerCase() === a.name.toLowerCase() ? '' : a.role;
+    // 직무 이름은 이름표가 짧게 유지될 때만 붙인다(이름과 직무 합쳐 16자 이하).
+    const jobRole = describeJob(a).role;
+    tag.job.textContent = a.name.length + jobRole.length <= TAG_JOB_MAX ? jobRole : '';
     tag.dot.style.background = STATUS_COLORS[a.status];
     tag.root.dataset.status = a.status;
     const label = inMeeting ? PILL_MEETING_KO : PILL_KO[a.status];

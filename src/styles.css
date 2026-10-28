@@ -498,6 +498,16 @@ button {
   font-weight: 500;
 }
 
+.tag-line .job {
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.tag-line .job:empty {
+  display: none;
+}
+
 .tag-line .dot {
   width: 8px;
   height: 8px;
@@ -564,6 +574,7 @@ button {
 
 /* Far away: name only. The full tag comes back on hover or select. */
 .tag.compact .role,
+.tag.compact .job,
 .tag.compact .pill,
 .tag.compact .activity {
   display: none;
@@ -1537,4 +1548,9 @@ button {
   color: var(--text-3);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.leave-note.refused {
+  color: #e5484d;
+  font-weight: 600;
 }
