@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { shortId, teamFromCwd } from './common.mjs';
+import { deviceName, shortId, teamFromCwd } from './common.mjs';
 import { readTranscriptTail, readTranscriptTitle, shortTitle } from './transcript.mjs';
 
 const HEAD_BYTES = 64 * 1024;
@@ -63,6 +63,7 @@ export function seedEvents({
 } = {}) {
   const events = [];
   const handles = terminalsBySession(sessionsDir, handleOf);
+  const device = deviceName();
   let dirs = [];
   try {
     dirs = readdirSync(root);
@@ -102,6 +103,7 @@ export function seedEvents({
           ...(lastReply ? { lastReply } : {}),
           ...(permission ? { permission } : {}),
           ...(terminal ? { terminal } : {}),
+          ...(device ? { device } : {}),
         });
       } catch {
         // 읽을 수 없는 파일은 건너뛴다.
