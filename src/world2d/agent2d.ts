@@ -47,7 +47,9 @@ export class Agent2D implements CatView {
   x = 0;
   z = 0;
   seat: SeatW | null = null;
-  place: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'library' | 'server' | 'search' | 'farewell' = 'desk';
+  place: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'booths' | 'library' | 'server' | 'search' | 'farewell' = 'desk';
+  /** What desiredPlace last asked for. A resting cat may sit in another break room when its own is full, so this can differ from `place`. */
+  wanted: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'library' | 'server' | 'search' | 'farewell' = 'desk';
   /** What the cat holds and does while it hangs out (mug, paddle, stretch). Driven by activities.ts. */
   readonly act: CatAct = { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0, work: 0 };
   /** Bumped whenever the cat is sent somewhere new, so a side trip knows it was overruled. */

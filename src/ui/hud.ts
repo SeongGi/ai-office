@@ -523,7 +523,8 @@ export class Hud {
       const compact = !hot && an.depth > (tag.compact ? COMPACT_OFF : COMPACT_ON);
       const near = !compact && (an.depth < 15 || hot);
       const sel = an.id === this.selected;
-      const show = an.visible && (an.depth < 70 || sel);
+      // A cat resting in a break room keeps its tag away so the lounge stays readable (hover or select shows it).
+      const show = an.visible && (an.depth < 70 || sel) && (!an.resting || hot);
       const L = tag.last;
       const o = show ? '1' : '0';
       if (o !== L.o) {

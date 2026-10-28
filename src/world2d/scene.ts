@@ -6,6 +6,7 @@ import { lighten, mix } from './color';
 import { ROOM_INFO } from '../../shared/sidepanel';
 import { circle, item, rbox, setStyle, shape, text, textWidth } from './draw';
 import * as F from './furniture';
+import { isOpenFront, wallSegments } from '../world/walls';
 import { receptionSpot } from './npcs';
 import { PALETTES2D, type Palette2D, type ThemeName } from './palette2d';
 
@@ -67,7 +68,7 @@ function unitsOf(d: SceneData, P: Palette2D): Unit[] {
     out.push({ side: r.side, x0: r.x - r.w / 2, w: r.w, door: roomDoorX(r), open: false, label: team.name, accent: P.accent(team.hue) });
   }
   for (const a of d.plan.amenities) {
-    const open = a.kind === 'kitchen' || a.kind === 'lounge' || a.kind === 'games';
+    const open = isOpenFront(a.kind);
     out.push({ side: a.side, x0: a.rect.x - a.rect.w / 2, w: a.rect.w, door: open ? null : a.rect.x, open, label: AMENITY_NAME[a.kind], accent: null });
   }
   return out;
@@ -189,20 +190,7 @@ export function drawScene(ctx: Ctx, d: SceneData, cull: Rect4 | null) {
 // ---------------------------------------------------------------- walls and signs
 
 function drawWalls(ctx: Ctx, P: Palette2D, plan: BuildingLayout, units: Unit[], body: () => void) {
-  const zN = -CORRIDOR / 2;
-  const zS = CORRIDOR / 2;
-  const segs: [number, number, number, number][] = [];
-  const GAP = 0.62;
-  for (const u of units) {
-    const outerZ = u.side === 'north' ? plan.z0 : plan.z1;
-    const wallZ = u.side === 'north' ? zN : zS;
-    segs.push([u.x0, outerZ, u.x0, wallZ], [u.x0 + u.w, outerZ, u.x0 + u.w, wallZ]);
-    if (u.open) {
-      segs.push([u.x0, wallZ, u.x0 + 0.9, wallZ], [u.x0 + u.w - 0.9, wallZ, u.x0 + u.w, wallZ]);
-    } else if (u.door !== null) {
-      segs.push([u.x0, wallZ, u.door - GAP, wallZ], [u.door + GAP, wallZ, u.x0 + u.w, wallZ]);
-    }
-  }
+  const segs = wallSegments(plan, units);
   const trace = () => {
     ctx.beginPath();
     for (const [x1, z1, x2, z2] of segs) {
@@ -370,7 +358,7 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
   const back = -d / 2;
   switch (kind) {
     case 'kitchen':
-      F.kitchenRun(ctx, 0, back + 0.55, Math.min(w - 2.4, 5.0));
+      F.kitchenRun(ctx, 0, back + 0.55, w - 2.5);
       F.fridge(ctx, w / 2 - 0.9, back + 0.55);
       F.island(ctx, -0.3, -0.5, 2.4);
       F.roundTable(ctx, -w / 2 + 1.5, 2.1, 0.55, 3);
@@ -398,7 +386,7 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       break;
     case 'lounge':
       F.rug(ctx, 0.2, -0.4, 4.8, 3.4, P.dark ? '#4f4486' : '#ffd4cc', true);
-      F.sofa(ctx, 0.2, -2.1, 0, 2.8, P.sofa[0]);
+      F.sofa(ctx, 0.2, -2.1, 0, 3.2, P.sofa[0]);
       F.armchair(ctx, -2.3, -0.2, Math.PI / 2, P.sofa[2]);
       F.armchair(ctx, 2.7, -0.2, -Math.PI / 2, P.sofa[1]);
       F.coffeeTable(ctx, 0.2, -0.4, 1.4, 0.7);
@@ -407,7 +395,7 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.beanbag(ctx, w / 2 - 2.0, 2.7, P.sofa[2]);
       F.bookshelf(ctx, -w / 2 + 0.3, -1.0, Math.PI / 2, 1.8);
       if (w >= F.NEWHIRE_MIN_W) F.newHireBench(ctx);
-      F.plant(ctx, w / 2 - 0.6, back + 0.6, 1.1);
+      F.plant(ctx, w / 2 - 0.6, w >= F.NEWHIRE_MIN_W ? -0.9 : back + 0.6, 1.1);
       F.plant(ctx, -w / 2 + 0.6, back + 0.6, 1.1);
       break;
     case 'games':
@@ -417,15 +405,8 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.vending(ctx, w / 2 - 0.7, back + 0.6, '#8ec9ff');
       F.plant(ctx, -w / 2 + 0.6, back + 0.6, 1.1);
       break;
-    case 'booths': {
-      const n = Math.max(1, Math.floor((w - 0.4) / 1.6));
-      for (let i = 0; i < n; i++) {
-        const bx = -w / 2 + 1.0 + i * 1.6;
-        if (bx > w / 2 - 0.6) break;
-        F.booth(ctx, bx, back + 1.0, P.chairs[i % P.chairs.length]);
-      }
-      if (w > 2.5) F.plant(ctx, w / 2 - 0.55, d / 2 - 0.8, 1.0);
+    case 'booths':
+      F.booths(ctx, w);
       break;
-    }
   }
 }

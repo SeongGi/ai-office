@@ -2,7 +2,8 @@
 import { darken, lighten, mix } from './color';
 import { circle, ellipse, item, rbox, shape, style, text } from './draw';
 import { OFFICE_D } from '../world/layout';
-import { serverRacks } from '../world/toolRooms';
+import { BOOTH_PITCH, boothSeats, globeSpot, searchWall, serverRacks } from '../world/toolRooms';
+import { NEWHIRE_BENCH } from '../world/trips';
 import { PALETTES2D, type Palette2D } from './palette2d';
 
 type Ctx = CanvasRenderingContext2D;
@@ -168,10 +169,17 @@ export function pingPong(ctx: Ctx, x: number, y: number) {
   rbox(ctx, x, y, 0.05, 1.34, '#ffffff', 0.02, { shadow: false, lw: 0.012 });
 }
 
-export function booth(ctx: Ctx, x: number, y: number, color: string) {
-  rbox(ctx, x, y, 1.3, 1.3, P.dark ? '#4a6da8' : '#cfe8ff', 0.22, { lw: 0.055 });
-  rbox(ctx, x, y - 0.35, 1.0, 0.3, P.woodLight, 0.1, { shadow: false, lw: 0.025 });
-  circle(ctx, x, y + 0.2, 0.22, color, { shadow: false });
+/**
+ * 1인 부스 row along the back wall: a floor mat and a partition between two booths. The desk and the chair are drawn per frame
+ * (World2D) like a team desk. Every part stays inside the walls: the outer partitions are 0.3 from the wall line.
+ */
+export function booths(ctx: Ctx, w: number) {
+  const xs = boothSeats(w);
+  const back = -OFFICE_D / 2;
+  const mat = P.dark ? '#4a6da8' : '#cfe8ff';
+  for (const x of xs) rbox(ctx, x, back + 1.7, BOOTH_PITCH - 0.2, 2.9, mat, 0.2, { shadow: false, lw: 0.03 });
+  for (let i = 0; i <= xs.length; i++) rbox(ctx, ((i - xs.length / 2) * BOOTH_PITCH), back + 1.4, 0.1, 2.5, P.woodLight, 0.04, { lw: 0.035 });
+  if (xs.length) plant(ctx, w / 2 - 0.6, OFFICE_D / 2 - 0.8, 1.0);
 }
 
 /** A round-table meeting set. Chairs sit on an ellipse around the table. */
@@ -220,16 +228,12 @@ export function interviewRoom(ctx: Ctx, w: number) {
   plant(ctx, -w / 2 + 0.6, OFFICE_D / 2 - 0.7, 1.1);
 }
 
-/** Lounge benches for the new hires who wait, lounge-local metres. Needs a lounge at least this wide. */
-export const NEWHIRE_MIN_W = 8.0;
-export const NEWHIRES = [
-  { x: 1.6, z: 2.2 },
-  { x: 3.4, z: 2.2 },
-];
+export { NEWHIRE_MIN_W, NEWHIRES } from '../world/trips';
 
 export function newHireBench(ctx: Ctx) {
-  rbox(ctx, 2.5, 2.36, 3.6, 0.5, P.woodLight, 0.2);
-  rbox(ctx, 2.5, 2.3, 3.4, 0.36, lighten(P.woodLight, 0.35), 0.16, { shadow: false, lw: 0.02 });
+  const b = NEWHIRE_BENCH;
+  rbox(ctx, b.x, b.z, b.w, b.d, P.woodLight, 0.2);
+  rbox(ctx, b.x, b.z - 0.06, b.w - 0.2, b.d - 0.14, lighten(P.woodLight, 0.35), 0.16, { shadow: false, lw: 0.02 });
 }
 
 export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string) {
@@ -300,14 +304,6 @@ function monitor(ctx: Ctx, x: number, z: number, w: number, color: string) {
   rbox(ctx, x, z + 0.02, w - 0.1, 0.18, color, 0.03, { shadow: false, noLine: true });
 }
 
-function consoleDesk(ctx: Ctx, x: number, z: number, w: number, screens: string[]) {
-  rbox(ctx, x, z, w, 0.62, P.metal, 0.12);
-  rbox(ctx, x, z, w - 0.12, 0.5, lighten(P.metal, 0.25), 0.1, { shadow: false, lw: 0.02 });
-  const n = screens.length;
-  for (let i = 0; i < n; i++) monitor(ctx, x + (i - (n - 1) / 2) * (w / n), z - 0.12, w / n - 0.2, screens[i]);
-  rbox(ctx, x, z + 0.17, 0.7, 0.12, '#fbfbff', 0.04, { lw: 0.025, shadow: false });
-}
-
 /** 자료실: bookshelves on three walls, a reading table with an open book. */
 export function libraryRoom(ctx: Ctx, w: number) {
   const e = w / 2;
@@ -327,37 +323,33 @@ export function libraryRoom(ctx: Ctx, w: number) {
   plant(ctx, e - 0.6, OFFICE_D / 2 - 0.7, 1.0);
 }
 
-/** 서버실: rack cabinets (the lights are drawn by drawServerLeds) and a console desk. */
+/** 서버실: rack cabinets (the lights are drawn by drawServerLeds). The two workstations in front are drawn per frame (World2D). */
 export function serverRoom(ctx: Ctx, w: number) {
   const e = w / 2;
   rug(ctx, 0, 0.2, Math.min(3.2, w - 1.0), 2.2, P.dark ? '#343a5c' : '#d6dce8');
   for (const r of serverRacks(w)) rackBody(ctx, r);
-  consoleDesk(ctx, 0, 0.3, 2.0, ['#6bd6ff', '#9be7a5']);
-  // cable run on the floor
+  // cable run on the floor, from the back racks down to the workstations
   ctx.save();
   ctx.lineCap = 'round';
   ctx.strokeStyle = P.dark ? '#5c6a96' : '#8d9ab8';
   ctx.lineWidth = 0.05;
   ctx.beginPath();
   ctx.moveTo(-1.4, -3.1);
-  ctx.quadraticCurveTo(-1.4, -0.8, -0.5, -0.1);
+  ctx.quadraticCurveTo(-1.4, -0.8, -1.0, 0.5);
   ctx.moveTo(1.4, -3.1);
-  ctx.quadraticCurveTo(1.4, -0.8, 0.5, -0.1);
+  ctx.quadraticCurveTo(1.4, -0.8, 1.0, 0.5);
   ctx.stroke();
   ctx.restore();
   plant(ctx, e - 0.6, OFFICE_D / 2 - 0.7, 1.0);
 }
 
-/** 정보검색실: a wall of monitors, a globe and a search desk. */
+/** 정보검색실: a wall of monitors and a globe. The two search desks are drawn per frame (World2D). */
 export function searchRoom(ctx: Ctx, w: number) {
   const e = w / 2;
-  const back = -OFFICE_D / 2 + 0.45;
   const cols = ['#8fd3ff', '#b9a6ff', '#a6e3b5'];
-  for (let i = 0; i < 3; i++) monitor(ctx, (i - 1) * 1.4, back, 1.15, cols[i]);
-  consoleDesk(ctx, 0, -1.05, 2.2, ['#8fd3ff', '#ffd27a']);
+  for (const [i, m] of searchWall().entries()) monitor(ctx, m.x, m.z, 1.15, cols[i]);
   // globe on a stand
-  const gx = -e + 0.85;
-  const gz = -2.4;
+  const { x: gx, z: gz } = globeSpot(w);
   circle(ctx, gx, gz + 0.2, 0.3, P.wood);
   circle(ctx, gx, gz, 0.46, '#8ec9ff');
   ctx.save();

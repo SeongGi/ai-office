@@ -31,6 +31,8 @@ const INTERVIEW_W = 5.6;
 export const TOOL_ROOM_W = { library: 5.0, server: 4.8, search: 4.8 } as const;
 /** 게임존은 고정 방이다. 채움 방이 아니라서 도구 방이 늘어도 사라지지 않는다. */
 const GAMES_W = 6.5;
+/** 1인 부스 채움 방의 최소 폭. 이보다 좁은 틈은 열린 방(라운지, 게임존, 주방)을 넓혀 메운다. */
+export const BOOTHS_MIN_W = 3.4;
 export const LOBBY_WIDTH = LOBBY_W;
 export const BUILDING_X0 = -24;
 /** 로비 북쪽 벽에 붙은 엘리베이터 위치(월드). 문은 +Z(로비 안쪽)를 본다. */
@@ -278,8 +280,18 @@ export function computeLayout(state: WorldState, book: SeatBook): BuildingLayout
     else lenS += w;
   }
   const wingLength = Math.max(lenN, lenS);
-  if (lenS < lenN - 0.01) amenities.splice(2, 0, { kind: 'booths', w: lenN - lenS, side: 'south' });
-  if (lenN < lenS - 0.01) amenities.splice(0, 0, { kind: 'booths', w: lenS - lenN, side: 'north' });
+  // 짧은 쪽 틈이 부스 몇 칸이 들어갈 만큼 넓으면 1인 부스로, 아니면 열린 방 하나를 그만큼 넓힌다.
+  const fill = (side: 'north' | 'south', gap: number) => {
+    if (gap >= BOOTHS_MIN_W) {
+      amenities.splice(side === 'north' ? 0 : 2, 0, { kind: 'booths', w: gap, side });
+      return;
+    }
+    const mine = amenities.filter((a) => a.side === side);
+    const target = (['lounge', 'games', 'kitchen'] as const).map((k) => mine.find((a) => a.kind === k)).find(Boolean) ?? mine[mine.length - 1];
+    target.w += gap;
+  };
+  if (lenS < lenN - 0.01) fill('south', lenN - lenS);
+  if (lenN < lenS - 0.01) fill('north', lenS - lenN);
 
   const length = LOBBY_W + wingLength;
   const depth = CORRIDOR + OFFICE_D * 2;

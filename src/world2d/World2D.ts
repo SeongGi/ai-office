@@ -14,7 +14,6 @@ import {
   thinkingText,
   TOOL_FAIL_PREFIX,
   type Place,
-  type ToolRoom,
   type ToolState,
 } from '../../shared/places';
 import type { FloorWorld, WorldPerf } from '../core/worldApi';
@@ -30,6 +29,7 @@ import {
   type Seat,
 } from '../world/layout';
 import { damp, prefersReducedMotion } from '../world/motion';
+import { BREAK_KINDS, isBreakKind, roomSpots, tripRoute, type TripKind } from '../world/trips';
 import type { Anchor, WorldCallbacks } from '../world/World';
 import { BreakLife } from './activities';
 import { Agent2D, PARTY_S, type P, type SeatW } from './agent2d';
@@ -38,7 +38,7 @@ import { drawCat, HEAD_TOP } from './cat';
 import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle, star, text, textWidth } from './draw';
-import { drawServerLeds, NEWHIRE_MIN_W, TOOL_AISLE, toolSpots } from './furniture';
+import { drawServerLeds } from './furniture';
 import { Npcs } from './npcs';
 import { FarewellChat } from '../world/farewellChat';
 import { PALETTES2D, type ThemeName } from './palette2d';
@@ -59,8 +59,6 @@ interface Ripple {
   t: number;
   color: string;
 }
-
-const MEETING_CHAIRS = 8;
 
 /** Confetti colours of the task done burst. Module level so a frame allocates nothing. */
 const CONFETTI = ['#ffd23f', '#ff7a9a', '#5ec8ff', '#7ee08a', '#ffffff'];
@@ -113,7 +111,7 @@ export class World2D implements FloorWorld {
   private reduced = prefersReducedMotion();
   private idleSince = new Map<string, number>();
   private nextSpawnAt = 0;
-  private slots = { meeting: new Map<string, number>(), lounge: new Map<string, number>(), games: new Map<string, number>(), kitchen: new Map<string, number>(), library: new Map<string, number>(), server: new Map<string, number>(), search: new Map<string, number>() };
+  private slots = { meeting: new Map<string, number>(), lounge: new Map<string, number>(), games: new Map<string, number>(), kitchen: new Map<string, number>(), booths: new Map<string, number>(), library: new Map<string, number>(), server: new Map<string, number>(), search: new Map<string, number>() };
   private toolStates = new Map<string, ToolState>();
   /** More than 12 cats on screen at low zoom: thinking clouds would only clutter, so they stay away. Checked once a second. */
   private crowded = false;
@@ -255,9 +253,12 @@ export class World2D implements FloorWorld {
       if (s.mode === 'gone' || s.mode === 'seated') continue;
       if (s.mode !== 'leaving' && s.isAway()) {
         this.freeSlot(id);
-        const trip = s.place === 'farewell' ? this.farewellSpot(s.team, id) : s.place === 'desk' ? null : this.tripTo(s.team, s.place, id);
-        if (trip) s.goTo(trip.route, trip.look, trip.sit);
-        else s.returnToSeat();
+        const away = s.place === 'farewell' || s.place === 'desk' ? null : this.tripTo(s.team, s.place, id);
+        const trip = s.place === 'farewell' ? this.farewellSpot(s.team, id) : away;
+        if (trip) {
+          s.goTo(trip.route, trip.look, trip.sit);
+          if (away) s.place = away.place;
+        } else s.returnToSeat();
         continue;
       }
       s.rewalk(this.exitFor(s.team));
@@ -278,7 +279,8 @@ export class World2D implements FloorWorld {
     if (!trip) return;
     s.placeAt(trip.route, trip.look, trip.sit);
     s.workPose = trip.work;
-    s.place = want;
+    s.place = trip.place;
+    s.wanted = want;
   }
 
   private updatePlaces() {
@@ -297,20 +299,21 @@ export class World2D implements FloorWorld {
       if (!ts) this.toolStates.set(id, (ts = createToolState()));
       const room = stepToolRoom(ts, agent, wall);
       const want: Place | 'farewell' = this.farewells > 0 ? 'farewell' : desiredPlace(agent, this.state.agents, this.idleSince.get(id) ?? null, now, this.state.meeting, room);
-      if (want === s.place) continue;
+      // A resting cat that found its own break room full sits in another one: that is still what it wants.
+      if (want === s.place || (want === s.wanted && isBreakKind(want) && isBreakKind(s.place))) continue;
       if (want === 'farewell') {
         this.freeSlot(id);
         const trip = this.farewellSpot(s.team, id);
         if (!trip) continue;
         s.goTo(trip.route, trip.look, false);
-        s.place = 'farewell';
+        s.place = s.wanted = 'farewell';
         continue;
       }
       if (want === 'desk') {
         this.freeSlot(id);
         if (this.reduced) s.snapToSeat();
         else s.returnToSeat();
-        s.place = 'desk';
+        s.place = s.wanted = 'desk';
         continue;
       }
       this.freeSlot(id);
@@ -319,7 +322,8 @@ export class World2D implements FloorWorld {
       if (this.reduced) s.placeAt(trip.route, trip.look, trip.sit);
       else s.goTo(trip.route, trip.look, trip.sit);
       s.workPose = trip.work;
-      s.place = want;
+      s.place = trip.place;
+      s.wanted = want;
     }
   }
 
@@ -343,6 +347,7 @@ export class World2D implements FloorWorld {
     this.slots.lounge.delete(id);
     this.slots.games.delete(id);
     this.slots.kitchen.delete(id);
+    this.slots.booths.delete(id);
     this.slots.library.delete(id);
     this.slots.server.delete(id);
     this.slots.search.delete(id);
@@ -388,121 +393,24 @@ export class World2D implements FloorWorld {
     return n;
   }
 
-  private takeSlot(map: Map<string, number>, id: string, max: number) {
-    const used = new Set(map.values());
-    let n = 0;
-    while (used.has(n) && n < max) n++;
-    map.set(id, n);
-    return n;
-  }
-
-  /** World route from the corridor outside an office door to a spot inside a shared room. */
-  private tripTo(team: string, kind: 'meeting' | 'lounge' | 'games' | 'kitchen' | ToolRoom, id: string): { route: P[]; look: number; sit: boolean; work: 0 | 1 | 2 | 3 } | null {
-    const room = this.plan?.rooms.get(team);
-    const am = this.plan?.amenities.find((a) => a.kind === kind);
-    if (!room || !am) return null;
-    const frame = { x: am.rect.x, z: am.rect.z, yaw: am.side === 'north' ? 0 : Math.PI };
-    const aw = (x: number, z: number) => this.w(frame, [x, z]);
-    const door = this.w(room, room.entry[room.entry.length - 1]);
-    const lane = { x: am.rect.x, z: 0 };
-    const w = am.rect.w;
-    const front = am.rect.d / 2 - 0.7;
-    if (kind === 'library' || kind === 'server' || kind === 'search') {
-      // Tool rooms: in through the door, along the aisle, down a free lane to the spot. Full means the cat stays at its desk.
-      const spots = toolSpots(kind, w);
-      const slot = this.takeSpot(this.slots[kind], id, spots.length);
-      if (slot < 0) return null;
-      const spot = spots[slot];
-      const route = [door, lane, aw(0, front), aw(0, TOOL_AISLE), aw(spot.via, TOOL_AISLE), aw(spot.via, spot.z), aw(spot.x, spot.z)];
-      return { route, look: spot.look, sit: false, work: spot.work };
+  /**
+   * World route from the corridor outside an office door to a free spot of a shared room. One cat per spot: a full room gives
+   * null (the cat stays at its desk). A resting cat tries its own break room first, then the other break rooms in a fixed order.
+   */
+  private tripTo(team: string, want: TripKind, id: string) {
+    const plan = this.plan;
+    if (!plan) return null;
+    const kinds = isBreakKind(want) ? [want, ...BREAK_KINDS.filter((k) => k !== want)] : [want];
+    for (const kind of kinds) {
+      const am = plan.amenities.find((a) => a.kind === kind);
+      if (!am) continue;
+      const slot = this.takeSpot(this.slots[kind], id, roomSpots(kind, am.rect.w).length);
+      if (slot < 0) continue;
+      const trip = tripRoute(plan, team, kind, slot);
+      if (trip) return { route: trip.route, look: trip.look, sit: trip.sit, work: trip.work, place: kind };
+      this.slots[kind].delete(id);
     }
-    const done = (t: { route: P[]; look: number; sit: boolean }) => ({ ...t, work: 0 as const });
-    if (kind === 'meeting') {
-      const slot = this.takeSlot(this.slots.meeting, id, 14);
-      const cx = 0;
-      const cz = -0.3;
-      const chair = slot < MEETING_CHAIRS;
-      const ang = chair ? (slot / MEETING_CHAIRS) * Math.PI * 2 + Math.PI / MEETING_CHAIRS : ((slot - MEETING_CHAIRS) / 6) * Math.PI * 2 + 0.3;
-      const rx = chair ? 2.05 : 2.75;
-      const rz = chair ? 1.35 : 2.05;
-      // Walk round the outside of the table (outer ring) from the door side to the target angle.
-      const outer = (a: number) => aw(cx + Math.cos(a) * 2.75, cz + Math.sin(a) * 2.05);
-      const route: P[] = [door, lane, aw(0, front)];
-      let a0 = Math.PI / 2;
-      let da = ((ang - a0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      const steps = Math.max(1, Math.ceil(Math.abs(da) / 0.6));
-      da /= steps;
-      for (let i = 1; i <= steps; i++) {
-        a0 += da;
-        route.push(outer(a0));
-      }
-      route.push(aw(cx + Math.cos(ang) * rx, cz + Math.sin(ang) * rz));
-      return done({ route, look: 0, sit: chair });
-    }
-    if (kind === 'games' || kind === 'kitchen') {
-      const table = w > 5.2;
-      const spots: { x: number; z: number; look: number }[] =
-        kind === 'games'
-          ? table
-            ? [
-                { x: -1.7, z: -0.4, look: 1 },
-                { x: 1.7, z: -0.4, look: -1 },
-                { x: -0.6, z: 0.65, look: 0.5 },
-                { x: 0.6, z: 0.65, look: -0.5 },
-                { x: -0.6, z: -1.45, look: 0.5 },
-                { x: 0.6, z: -1.45, look: -0.5 },
-                { x: -2.5, z: 0.6, look: 1 },
-                { x: 2.5, z: 0.6, look: -1 },
-              ]
-            : [
-                { x: -0.8, z: 0.2, look: 1 },
-                { x: 0.8, z: 0.2, look: -1 },
-              ]
-          : [
-              { x: -1.9, z: -0.5, look: 1 },
-              { x: 1.3, z: -0.5, look: -1 },
-              { x: -0.9, z: 0.45, look: 0.6 },
-              { x: 0.3, z: 0.45, look: -0.6 },
-              { x: -0.3, z: -1.45, look: 0 },
-              { x: -w / 2 + 1.5, z: 1.3, look: 1 },
-              { x: w / 2 - 1.5, z: 1.3, look: -1 },
-            ];
-      const map = this.slots[kind];
-      const slot = this.takeSlot(map, id, spots.length - 1);
-      const spot = spots[Math.min(slot, spots.length - 1)];
-      // In down the middle, along the aisle in front of the island (or the table), and round its end to the spots behind it.
-      const aisle = kind === 'kitchen' ? 1.0 : 1.2;
-      const behind = kind === 'kitchen' ? spot.z < -1.0 : table && spot.z < -1.1;
-      const x = !behind ? spot.x : kind === 'kitchen' ? -1.9 : Math.sign(spot.x) * 1.7;
-      const route = [door, lane, aw(0, front), aw(0, aisle), aw(x, aisle), aw(x, spot.z), aw(spot.x, spot.z)];
-      return done({ route, look: spot.look, sit: false });
-    }
-    // lounge: sofa, armchairs and beanbags first (sit), then standing spots
-    const spots: { x: number; z: number; sit: boolean }[] = [
-      { x: -0.7, z: -1.9, sit: true },
-      { x: 0.2, z: -1.9, sit: true },
-      { x: 1.1, z: -1.9, sit: true },
-      { x: -2.3, z: -0.1, sit: true },
-      { x: 2.7, z: -0.1, sit: true },
-      { x: w / 2 - 1.0, z: 2.2, sit: true },
-      { x: w / 2 - 2.0, z: 2.7, sit: true },
-      { x: -1.4, z: 1.2, sit: false },
-      { x: 0.2, z: 1.0, sit: false },
-      { x: 1.6, z: 1.2, sit: false },
-      { x: -1.0, z: 2.4, sit: false },
-      { x: 1.4, z: 2.6, sit: false },
-    ].filter((p) => !(w >= NEWHIRE_MIN_W && p.z > 0.9 && p.x > -0.5)); // the new hires wait on the bench in the east half
-    const slot = this.takeSlot(this.slots.lounge, id, spots.length - 1);
-    const spot = spots[Math.min(slot, spots.length - 1)];
-    // In west of the TV to the aisle between the TV and the coffee table; the sofa is reached round the table.
-    const aisle = 0.6;
-    const route = [door, lane, aw(-1.4, front), aw(-1.4, aisle)];
-    if (spot.z < -1.0) {
-      const x = spot.x <= 0.2 ? -1.2 : 1.3;
-      route.push(aw(x, aisle), aw(x, -1.3), aw(spot.x, -1.3));
-    } else route.push(aw(spot.x, aisle));
-    route.push(aw(spot.x, spot.z));
-    return done({ route, look: 0, sit: spot.sit });
+    return null;
   }
 
   // ---------------------------------------------------------------- arrivals and departures
@@ -775,6 +683,7 @@ export class World2D implements FloorWorld {
         y,
         depth: base - a.z * 0.08,
         visible: a.mode !== 'gone' && !a.leaving && sx > -40 && sx < cam.w + 40 && y > -40 && y < cam.h + 80,
+        resting: a.mode === 'standing' && isBreakKind(a.place),
       });
     }
     return out;
@@ -929,6 +838,10 @@ export class World2D implements FloorWorld {
       }
       items.push({ y: a.z, kind: 0, a });
     }
+    for (const d of this.stationViews(state)) {
+      desks.push(d);
+      items.push({ y: deskCenter(d)[1], kind: 1, d });
+    }
     items.push({ y: ELEV.plane, kind: 2 });
     for (let i = 0; i < this.npcs.count(); i++) {
       const y = this.npcs.depth(i);
@@ -1005,6 +918,29 @@ export class World2D implements FloorWorld {
       circle(ctx, 0.2, 0.17, 0.06, '#ff7a9a', { shadow: false, noLine: true });
       ctx.restore();
     }
+  }
+
+  /** Desks and chairs of the server room, the search room and the booths: one per workstation, drawn like a team desk. A dark screen means nobody works there. */
+  private stationViews(state: WorldState): DeskView[] {
+    const plan = this.plan;
+    const out: DeskView[] = [];
+    if (!plan) return out;
+    for (const am of plan.amenities) {
+      if (am.kind !== 'server' && am.kind !== 'search' && am.kind !== 'booths') continue;
+      const frame = { x: am.rect.x, z: am.rect.z, yaw: am.side === 'north' ? 0 : Math.PI };
+      // The seat faces the back wall (-Z of the room), the desk stands in front of it.
+      const fx = -Math.sin(frame.yaw);
+      const fz = -Math.cos(frame.yaw);
+      const slots = this.slots[am.kind];
+      for (const [i, sp] of roomSpots(am.kind, am.rect.w).entries()) {
+        if (!sp.desk) continue;
+        const [x, z] = toWorld(frame, [sp.x, sp.z]);
+        let agent: Agent | undefined;
+        for (const [id, n] of slots) if (n === i && !this.agents.get(id)?.leaving) agent = state.agents[id];
+        out.push({ id: `${am.kind}-${i}`, seatX: x, seatZ: z, fx, fz, status: agent ? effectiveStatus(agent, Date.now()) : 'offline', tool: agent ? agent.lastTool ?? agent.tool : undefined, still: this.reduced || this.crowded });
+      }
+    }
+    return out;
   }
 
   /** Rack lights in the server room: red while a cat works there, green otherwise. */

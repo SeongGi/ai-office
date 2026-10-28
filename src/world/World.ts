@@ -76,6 +76,8 @@ export interface Anchor {
   y: number;
   depth: number;
   visible: boolean;
+  /** The cat rests in a break room: its tag stays hidden until it is hovered or selected. */
+  resting?: boolean;
 }
 
 export interface WorldCallbacks {
