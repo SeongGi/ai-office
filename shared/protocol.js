@@ -15,7 +15,7 @@ const SYSTEM_AGENT = 'system';
 
 const MAX_HISTORY = 24;
 const MAX_TEXT = 280;
-const LEFT_IGNORE_MS = 30_000;
+const LEFT_IGNORE_MS = 6 * 60 * 60_000;
 
 export function createState() {
   return { teams: {}, agents: {}, seq: 0, updatedAt: 0 };
