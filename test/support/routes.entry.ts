@@ -1,13 +1,13 @@
 // Bundled by test/walls.test.mjs: the real layout, route and cat-walking code, without the canvas.
 import { ELEVATOR, OFFICE_D, CORRIDOR, SeatBook, computeLayout, toWorld, BOOTHS_MIN_W, type BuildingLayout, type RoomLayout, type Seat } from '../../src/world/layout';
-import { roomSpots, roomObstacles, tripRoute, BREAK_KINDS, MEETING_CHAIRS, NEWHIRE_BENCH, NEWHIRES, NEWHIRE_MIN_W } from '../../src/world/trips';
+import { roomSpots, roomObstacles, tripRoute, claimSpot, BREAK_KINDS, MEETING_CHAIRS, NEWHIRE_BENCH, NEWHIRES, NEWHIRE_MIN_W } from '../../src/world/trips';
 import { boothCount, boothSeats, BOOTH_PITCH, toolObstacles } from '../../src/world/toolRooms';
 import { DOOR_GAP, wallSegments } from '../../src/world/walls';
 import { Agent2D, type P, type SeatW } from '../../src/world2d/agent2d';
 import { rosterOrigin } from '../../src/world2d/roster';
 import { ELEV } from '../../src/world2d/scene';
 
-export { ELEVATOR, OFFICE_D, CORRIDOR, SeatBook, computeLayout, toWorld, BOOTHS_MIN_W, roomSpots, roomObstacles, tripRoute, BREAK_KINDS, MEETING_CHAIRS, NEWHIRE_BENCH, NEWHIRES, NEWHIRE_MIN_W };
+export { ELEVATOR, OFFICE_D, CORRIDOR, SeatBook, computeLayout, toWorld, BOOTHS_MIN_W, roomSpots, roomObstacles, tripRoute, claimSpot, BREAK_KINDS, MEETING_CHAIRS, NEWHIRE_BENCH, NEWHIRES, NEWHIRE_MIN_W };
 export { boothCount, boothSeats, BOOTH_PITCH, toolObstacles, DOOR_GAP, wallSegments, Agent2D, rosterOrigin, ELEV };
 export type { BuildingLayout, RoomLayout, Seat, P, SeatW };
 

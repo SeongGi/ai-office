@@ -30,7 +30,7 @@ import {
   type Seat,
 } from '../world/layout';
 import { damp, prefersReducedMotion } from '../world/motion';
-import { BREAK_KINDS, isBreakKind, roomSpots, tripRoute, type TripKind } from '../world/trips';
+import { claimSpot, isBreakKind, roomSpots, tripRoute, type TripKind } from '../world/trips';
 import type { Anchor, WorldCallbacks } from '../world/World';
 import { BreakLife } from './activities';
 import { Agent2D, PARTY_S, type P, type SeatW } from './agent2d';
@@ -303,8 +303,9 @@ export class World2D implements FloorWorld {
       if (!ts) this.toolStates.set(id, (ts = createToolState()));
       const room = stepToolRoom(ts, agent, wall);
       const want: Place | 'farewell' = this.farewells > 0 ? 'farewell' : desiredPlace(agent, this.state.agents, this.idleSince.get(id) ?? null, now, this.state.meeting, room);
-      // A resting cat that found its own break room full sits in another one: that is still what it wants.
-      if (want === s.place || (want === s.wanted && isBreakKind(want) && isBreakKind(s.place))) continue;
+      // A resting cat that found its own break room full, or a meeting cat that found the chairs taken, sits in a break room:
+      // that is still what it wants.
+      if (want === s.place || (want === s.wanted && (isBreakKind(want) || want === 'meeting') && isBreakKind(s.place))) continue;
       if (want === 'farewell') {
         this.freeSlot(id);
         const trip = this.farewellSpot(s.team, id);
@@ -387,33 +388,18 @@ export class World2D implements FloorWorld {
     } else s.bubbleWant = 0;
   }
 
-  /** A free spot number below `count`, or -1 when the room is full (the cat then stays at its desk). */
-  private takeSpot(map: Map<string, number>, id: string, count: number) {
-    const used = new Set(map.values());
-    let n = 0;
-    while (used.has(n)) n++;
-    if (n >= count) return -1;
-    map.set(id, n);
-    return n;
-  }
-
   /**
-   * World route from the corridor outside an office door to a free spot of a shared room. One cat per spot: a full room gives
-   * null (the cat stays at its desk). A resting cat tries its own break room first, then the other break rooms in a fixed order.
+   * World route from the corridor outside an office door to a free spot of a shared room. One cat per spot: when every room
+   * tripKinds offers is full this gives null (the cat stays at its desk).
    */
   private tripTo(team: string, want: TripKind, id: string) {
     const plan = this.plan;
     if (!plan) return null;
-    const kinds = isBreakKind(want) ? [want, ...BREAK_KINDS.filter((k) => k !== want)] : [want];
-    for (const kind of kinds) {
-      const am = plan.amenities.find((a) => a.kind === kind);
-      if (!am) continue;
-      const slot = this.takeSpot(this.slots[kind], id, roomSpots(kind, am.rect.w).length);
-      if (slot < 0) continue;
-      const trip = tripRoute(plan, team, kind, slot);
-      if (trip) return { route: trip.route, look: trip.look, sit: trip.sit, work: trip.work, place: kind };
-      this.slots[kind].delete(id);
-    }
+    const got = claimSpot(this.slots, want, id, (kind) => plan.amenities.find((a) => a.kind === kind)?.rect.w);
+    if (!got) return null;
+    const trip = tripRoute(plan, team, got.kind, got.slot);
+    if (trip) return { route: trip.route, look: trip.look, sit: trip.sit, work: trip.work, place: got.kind };
+    this.slots[got.kind].delete(id);
     return null;
   }
 

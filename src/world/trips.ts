@@ -15,6 +15,31 @@ export type TripKind = 'meeting' | BreakKind | ToolRoomKind;
 export const BREAK_KINDS: BreakKind[] = ['lounge', 'games', 'kitchen', 'booths'];
 export const isBreakKind = (k: string): k is BreakKind => (BREAK_KINDS as string[]).includes(k);
 
+/** The rooms a cat that wants `want` tries, in order: a resting cat or one that finds the meeting chairs taken goes on to the break rooms. */
+export function tripKinds(want: TripKind): TripKind[] {
+  if (isBreakKind(want)) return [want, ...BREAK_KINDS.filter((k) => k !== want)];
+  if (want === 'meeting') return ['meeting', ...BREAK_KINDS];
+  return [want];
+}
+
+/**
+ * One cat per spot: the first room of tripKinds(want) with a free spot gets cat `id`, recorded in `slots`. `width` gives a room's
+ * width, or undefined when the building has no such room. null when every room is full (the cat stays at its desk).
+ */
+export function claimSpot(slots: Record<TripKind, Map<string, number>>, want: TripKind, id: string, width: (kind: TripKind) => number | undefined) {
+  for (const kind of tripKinds(want)) {
+    const w = width(kind);
+    if (w === undefined) continue;
+    const used = new Set(slots[kind].values());
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    if (slot >= roomSpots(kind, w).length) continue;
+    slots[kind].set(id, slot);
+    return { kind, slot };
+  }
+  return null;
+}
+
 /**
  * Lounge bench for the new hires who wait (lounge-local metres). It stands along the east wall at the back, the two cats stand
  * on it one behind the other: their sprites (1.3 wide, 1.4 tall) reach up into the lounge, never into a wall or the door plaque.
@@ -38,37 +63,26 @@ export interface RoomSpot {
   desk?: boolean;
 }
 
-/** The standing places outside the chairs: the room is small, so only these five fit without two sprites overlapping or touching a wall. */
-const OUTER_SPOTS = [
-  { x: -2.15, z: 1.9 },
-  { x: 2.15, z: 1.9 },
-  { x: 0, z: 2.15 },
-  { x: -2.15, z: -2.2 },
-  { x: 2.15, z: -2.2 },
-];
 const MEETING = { cx: 0, cz: -0.3 };
 /** The chair ring. With six chairs from 30 degrees, the two chairs on each side are 2 * SEAT.rz apart in z, which must clear a 1.4 tall sprite. */
 const SEAT = { rx: 2.05, rz: 1.42 };
 /** The way round the outside of the table that the cats walk along. */
 const WALK = { rx: 2.8, rz: 2.45 };
 function meetingSpot(slot: number): RoomSpot {
-  if (slot < MEETING_CHAIRS) {
-    const ang = (slot / MEETING_CHAIRS) * Math.PI * 2 + Math.PI / MEETING_CHAIRS;
-    return { x: MEETING.cx + Math.cos(ang) * SEAT.rx, z: MEETING.cz + Math.sin(ang) * SEAT.rz, look: 0, sit: true, work: 0 };
-  }
-  const o = OUTER_SPOTS[slot - MEETING_CHAIRS];
-  return { x: o.x, z: o.z, look: 0, sit: false, work: 0 };
+  const ang = (slot / MEETING_CHAIRS) * Math.PI * 2 + Math.PI / MEETING_CHAIRS;
+  return { x: MEETING.cx + Math.cos(ang) * SEAT.rx, z: MEETING.cz + Math.sin(ang) * SEAT.rz, look: 0, sit: true, work: 0 };
 }
 
 /**
  * Every place a cat can take in a room of kind `kind` and width `w`, in the order it is handed out.
- * No two places are closer than 1.0; in the break rooms, the booths and the outer meeting ring two places are 1.9 apart in x or 1.5 apart in z.
+ * No two places are closer than 1.0; in the break rooms and the booths two places are 1.9 apart in x or 1.5 apart in z.
+ * The meeting room has only its chairs: a cat that finds them all taken goes to a break room (tripKinds).
  */
 export function roomSpots(kind: TripKind, w: number): RoomSpot[] {
   if (kind === 'library' || kind === 'server' || kind === 'search') {
     return toolSpots(kind, w).map((s) => ({ x: s.x, z: s.z, look: s.look, sit: !!s.desk, work: s.work, desk: s.desk }));
   }
-  if (kind === 'meeting') return Array.from({ length: MEETING_CHAIRS + OUTER_SPOTS.length }, (_, i) => meetingSpot(i));
+  if (kind === 'meeting') return Array.from({ length: MEETING_CHAIRS }, (_, i) => meetingSpot(i));
   if (kind === 'booths') return boothSeats(w).map((x) => ({ x, z: BOOTH_SEAT_Z, look: 0, sit: true, work: 0, desk: true }));
   const s = (x: number, z: number, look: number, sit = false): RoomSpot => ({ x, z, look, sit, work: 0 });
   // Two standing places in one room are at least 1.9 apart in x, or at least 1.5 apart in z: a sprite is 1.3 wide and 1.4 tall.

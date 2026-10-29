@@ -314,6 +314,21 @@ test('the cats on the meeting chairs do not overlap each other', () => {
   }
 });
 
+test('more cats than chairs at a meeting: only MEETING_CHAIRS sit in the meeting room, the rest go to the break rooms', () => {
+  for (const c of allCases()) {
+    const P = setup(c.counts);
+    const width = (kind) => P.plan.amenities.find((a) => a.kind === kind)?.rect.w;
+    if (width('meeting') === undefined) continue;
+    const slots = { meeting: new Map(), lounge: new Map(), games: new Map(), kitchen: new Map(), booths: new Map(), library: new Map(), server: new Map(), search: new Map() };
+    const free = M.BREAK_KINDS.reduce((n, k) => n + (width(k) === undefined ? 0 : M.roomSpots(k, width(k)).length), 0);
+    const cats = M.MEETING_CHAIRS + Math.min(5, free);
+    const got = Array.from({ length: cats }, (_, i) => M.claimSpot(slots, 'meeting', `cat${i}`, width));
+    const inMeeting = got.filter((g) => g?.kind === 'meeting').length;
+    assert.equal(inMeeting, M.MEETING_CHAIRS, `${c.name}: ${inMeeting} cats in the meeting room`);
+    for (const g of got.slice(M.MEETING_CHAIRS)) assert.ok(g && M.BREAK_KINDS.includes(g.kind), `${c.name}: an extra meeting cat went to ${g?.kind ?? 'its desk'}`);
+  }
+});
+
 test('the meeting room roster hangs outside the building and right of the elevator, also when the north wing has no team room', () => {
   const book = new M.SeatBook();
   M.computeLayout(world([2, 3]), book);
@@ -334,7 +349,7 @@ test('the meeting room roster hangs outside the building and right of the elevat
   }
 });
 
-test('no two spots of a room are closer than 1.0 m; standing spots of break rooms, booths and the outer meeting ring do not overlap', () => {
+test('no two spots of a room are closer than 1.0 m; standing spots of break rooms and booths do not overlap', () => {
   for (const c of allCases()) {
     const P = setup(c.counts);
     for (const am of tripRooms(P)) {
@@ -343,8 +358,7 @@ test('no two spots of a room are closer than 1.0 m; standing spots of break room
         for (let j = i + 1; j < spots.length; j++) {
           const d = Math.hypot(spots[i].x - spots[j].x, spots[i].z - spots[j].z);
           assert.ok(d >= 1.0 - 1e-9, `${c.name}: ${am.kind} spots #${i} and #${j} are ${d.toFixed(2)} m apart`);
-          const rule = M.BREAK_KINDS.includes(am.kind) || (am.kind === 'meeting' && i >= M.MEETING_CHAIRS);
-          if (rule) assert.ok(apart(spots[i], spots[j]), `${c.name}: ${am.kind} spots #${i} (${spots[i].x}, ${spots[i].z}) and #${j} (${spots[j].x}, ${spots[j].z}) overlap`);
+          if (M.BREAK_KINDS.includes(am.kind)) assert.ok(apart(spots[i], spots[j]), `${c.name}: ${am.kind} spots #${i} (${spots[i].x}, ${spots[i].z}) and #${j} (${spots[j].x}, ${spots[j].z}) overlap`);
         }
       }
     }
