@@ -90,6 +90,8 @@ import {
   effectiveStatus,
   failureTool,
   initialToolState,
+  isBusy,
+  isIdleWait,
   stepToolRoom,
   thinkingText,
   toolRoom,
@@ -245,6 +247,25 @@ test('effectiveStatus: a tool failure turns back to thinking after 4 s, other er
   assert.equal(effectiveStatus(f, 10_000 + TOOL_FAIL_SHOW_MS + 1), 'thinking');
   assert.equal(effectiveStatus({ status: 'error', activity: '오류로 멈췄어요', lastSeen: 0 }, 99_999), 'error');
   assert.equal(failureTool(f), 'Bash');
+});
+
+test('다음 지시를 기다리는 waiting은 바쁘지 않고 차분하게 그린다, 권한 확인 waiting은 바쁘고 도움 요청으로 그린다', () => {
+  const idleWait = { status: 'waiting', waitKind: 'idle' };
+  const permission = { status: 'waiting', waitKind: 'permission' };
+  const unknown = { status: 'waiting' };
+  assert.equal(isIdleWait(idleWait), true);
+  assert.equal(isBusy(idleWait), false);
+  assert.equal(effectiveStatus(idleWait, 0), 'idle');
+  for (const a of [permission, unknown]) {
+    assert.equal(isIdleWait(a), false);
+    assert.equal(isBusy(a), true);
+    assert.equal(effectiveStatus(a, 0), 'waiting');
+  }
+  assert.equal(isBusy({ status: 'working' }), true);
+  assert.equal(isBusy({ status: 'thinking' }), true);
+  assert.equal(isBusy({ status: 'idle' }), false);
+  // idle 이유가 남아 있어도 waiting이 아니면 입력 대기가 아니다.
+  assert.equal(isIdleWait({ status: 'working', waitKind: 'idle' }), false);
 });
 
 test('thinkingText: 16 characters with an ellipsis, 생각 중 when empty', () => {

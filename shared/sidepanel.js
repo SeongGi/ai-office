@@ -1,6 +1,6 @@
 // Pure helpers for the side panel. No DOM, so node:test can import them.
 import { describeJob, displayName } from './role.js';
-import { initialToolState, stepToolRoom, toolRoom } from './places.js';
+import { initialToolState, isIdleWait, stepToolRoom, toolRoom } from './places.js';
 
 export const TOOL_CLASSES = ['library', 'server', 'search', 'other'];
 export const TIMELINE_MAX = 15;
@@ -112,6 +112,7 @@ function entry(a, name, now) {
     name,
     hue: 0,
     status: a.status,
+    idleWait: isIdleWait(a),
     role: job.role,
     doing: job.doing,
     kind: job.kind,

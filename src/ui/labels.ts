@@ -66,6 +66,10 @@ export const PILL_KO: Record<Status, string> = {
 
 export const PILL_MEETING_KO = '회의 중';
 
+/** 답을 마치고 다음 지시를 기다리는 waiting(waitKind idle)에 쓰는 문구. */
+export const IDLE_WAIT_KO = '다음 지시를 기다려요';
+export const IDLE_WAIT_PILL_KO = '지시 기다리는 중';
+
 /** 알약 뒤에 붙는 짧은 설명. 길면 말줄임표로 줄인다. */
 export function pillDetail(activity: string | undefined, max = 18): string {
   const t = (activity ?? '').replace(/\s+/g, ' ').trim();

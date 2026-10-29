@@ -107,3 +107,10 @@ test('buildRoster: 순서, 서브 묶기, 퇴근 제외, moreSubs', () => {
   assert.equal(r[1].subs.length, 0);
   assert.equal(r[1].moreSubs, 0);
 });
+
+test('직원 목록은 다음 지시를 기다리는 세션에 idleWait 표시를 붙인다', () => {
+  const state = { teams: { t1: { id: 't1', name: 't1', order: 0 } }, agents: { a: mk('a', { status: 'waiting', waitKind: 'idle' }), b: mk('b', { status: 'waiting', waitKind: 'permission' }) } };
+  const roster = buildRoster(state, 0);
+  assert.equal(roster.find((r) => r.id === 'a').idleWait, true);
+  assert.equal(roster.find((r) => r.id === 'b').idleWait, false);
+});

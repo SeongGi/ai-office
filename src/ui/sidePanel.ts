@@ -2,7 +2,7 @@ import type { WorldState } from '../../shared/protocol';
 import type { ToolState } from '../../shared/places';
 import { buildRoster, buildRows, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, ROOM_INFO, TOOL_CLASSES, type GuidePlace, type ToolClass } from '../../shared/sidepanel';
 import { teamAccent } from '../world/palette';
-import { STATUS_LABEL_KO } from './labels';
+import { IDLE_WAIT_KO, STATUS_LABEL_KO } from './labels';
 
 const STORE_KEY = 'agent-floor.sidePanel';
 const TIMELINE_KEY = 'agent-floor.sidePanel.timeline';
@@ -137,18 +137,19 @@ export class SidePanel {
     this.live = liveRoomCounts(this.dwell, this.state.agents, Date.now());
     const rows = buildRows(this.state, Date.now());
     const roster = buildRoster(this.state, Date.now());
-    const key = roster.map((m) => [m, ...m.subs].map((r) => `${r.id}:${r.name}:${r.status}:${r.role}:${r.doing}:${r.rel}`).join('~') + m.moreSubs).join(',') + '#' + TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + GUIDE_PLACES.map((p) => this.live[p]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
+    const key = roster.map((m) => [m, ...m.subs].map((r) => `${r.id}:${r.name}:${r.status}:${r.idleWait}:${r.role}:${r.doing}:${r.rel}`).join('~') + m.moreSubs).join(',') + '#' + TOOL_CLASSES.map((c) => counts[c]).join(',') + '|' + GUIDE_PLACES.map((p) => this.live[p]).join(',') + '|' + rows.map((r) => `${r.agentId}:${r.ts}:${r.rel}:${r.name}:${r.hue}`).join(',');
     if (key === this.key) return;
     this.key = key;
-    const pill = (st: keyof typeof STATUS_LABEL_KO) => `<span class="sp-pill sp-st-${st}">${esc(STATUS_LABEL_KO[st])}</span>`;
+    const pill = (r: { status: keyof typeof STATUS_LABEL_KO; idleWait: boolean }) =>
+      r.idleWait ? `<span class="sp-pill sp-st-idle">${esc(IDLE_WAIT_KO)}</span>` : `<span class="sp-pill sp-st-${r.status}">${esc(STATUS_LABEL_KO[r.status])}</span>`;
     this.rosterBox.innerHTML = roster.length
       ? roster
           .map(
             (m) =>
-              `<div class="sp-person"><button type="button" class="sp-row" data-id="${esc(m.id)}"><span class="sp-dot" style="background:${teamAccent(m.hue).getStyle()}"></span><span class="sp-main"><span class="sp-head"><span class="sp-who">${esc(m.name)}</span><span class="sp-chip">${esc(m.role)}</span>${pill(m.status)}</span><span class="sp-text">${esc(m.doing)}</span></span></button>${m.subs
+              `<div class="sp-person"><button type="button" class="sp-row" data-id="${esc(m.id)}"><span class="sp-dot" style="background:${teamAccent(m.hue).getStyle()}"></span><span class="sp-main"><span class="sp-head"><span class="sp-who">${esc(m.name)}</span><span class="sp-chip">${esc(m.role)}</span>${pill(m)}</span><span class="sp-text">${esc(m.doing)}</span></span></button>${m.subs
                 .map(
                   (s) =>
-                    `<button type="button" class="sp-row sp-sub" data-id="${esc(s.id)}"><span class="sp-main"><span class="sp-head"><span class="sp-who">${esc(s.name)}</span>${pill(s.status)}</span><span class="sp-text">${esc(s.doing)}</span></span></button>`,
+                    `<button type="button" class="sp-row sp-sub" data-id="${esc(s.id)}"><span class="sp-main"><span class="sp-head"><span class="sp-who">${esc(s.name)}</span>${pill(s)}</span><span class="sp-text">${esc(s.doing)}</span></span></button>`,
                 )
                 .join('')}${m.moreSubs ? `<div class="sp-more">${esc(PANEL_KO.moreSubs(m.moreSubs))}</div>` : ''}</div>`,
           )

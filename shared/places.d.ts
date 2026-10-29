@@ -32,6 +32,8 @@ export function initialToolState(agent: Agent, nowMs: number): ToolState;
 export const TOOL_FAIL_PREFIX: string;
 export const TOOL_FAIL_SHOW_MS: number;
 export function isToolFailure(agent: Agent): boolean;
+export function isIdleWait(agent: Agent): boolean;
+export function isBusy(agent: Agent): boolean;
 export function effectiveStatus(agent: Agent, nowMs: number): Agent['status'];
 export function failureTool(agent: Agent): string;
 export function thinkingText(activity: string | undefined | null): string;

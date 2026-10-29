@@ -44,6 +44,8 @@ export interface RosterEntry {
   name: string;
   hue: number;
   status: Agent['status'];
+  /** 답을 마치고 다음 지시를 기다리는 중(waitKind idle). */
+  idleWait: boolean;
   role: string;
   doing: string;
   kind: string;

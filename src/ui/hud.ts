@@ -3,8 +3,8 @@ import type { ConnectionMode } from '../core/store';
 import type { Anchor } from '../world/World';
 import { looksFor, shirtFor, sourceLabel, STATUS_COLORS, teamAccent } from '../world/palette';
 import { describeJob, displayName, isWatcher } from '../../shared/role';
-import { CARD_KO, PILL_KO, PILL_MEETING_KO, pillDetail, STATUS_LABEL_KO as STATUS_LABEL } from './labels';
-import { meetingCovers } from '../../shared/places';
+import { CARD_KO, IDLE_WAIT_KO, IDLE_WAIT_PILL_KO, PILL_KO, PILL_MEETING_KO, pillDetail, STATUS_LABEL_KO as STATUS_LABEL } from './labels';
+import { effectiveStatus, isBusy, isIdleWait, meetingCovers } from '../../shared/places';
 import { controlAllowed, dismissAgent, renameAgent, sendInstruction } from '../core/connection';
 import pencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw';
 import { icon } from './icons';
@@ -265,7 +265,7 @@ export class Hud {
     const attention = new Map<string, boolean>();
     for (const a of Object.values(s.agents)) {
       counts.set(a.team, (counts.get(a.team) || 0) + 1);
-      if (a.status === 'waiting' || a.status === 'error') attention.set(a.team, true);
+      if ((a.status === 'waiting' && !isIdleWait(a)) || a.status === 'error') attention.set(a.team, true);
     }
     const key = teams.map((t) => `${t.id}:${t.name}:${counts.get(t.id)}:${attention.get(t.id) ? 1 : 0}`).join('|');
     if (key === this.teamsKey) return;
@@ -295,14 +295,14 @@ export class Hud {
     }
     if (this.editing === a.id && this.card.querySelector('.name-input')) return;
     const canSend = this.mode === 'live' && controlAllowed();
-    const key = `${a.id}|${displayName(a, s.agents)}|${a.name}|${a.status}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${a.lastPrompt}|${a.lastReply}|${canSend}|${Math.floor(Date.now() / 10000)}`;
+    const key = `${a.id}|${displayName(a, s.agents)}|${a.name}|${a.status}|${a.waitKind}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${a.lastPrompt}|${a.lastReply}|${canSend}|${Math.floor(Date.now() / 10000)}`;
     if (key === this.cardKey) return;
     this.cardKey = key;
     const team = s.teams[a.team];
     const parent = a.parent ? s.agents[a.parent] : undefined;
     const crew = Object.values(s.agents).filter((x) => x.parent === a.id);
     const hist = [...a.history].reverse().slice(0, 7);
-    const color = STATUS_COLORS[a.status];
+    const color = STATUS_COLORS[effectiveStatus(a, Date.now())];
     const look = looksFor(a.id);
     const isMain = a.role === 'Lead' && !a.parent;
     const shortSession = (a.id.includes(':') ? a.id.split(':')[1] : a.id) || a.id;
@@ -325,7 +325,8 @@ export class Hud {
     if (oldBox?.dataset.agent) this.drafts.set(oldBox.dataset.agent, oldBox.value);
     const hadFocus = oldBox !== null && document.activeElement === oldBox;
     const caret = oldBox?.selectionStart ?? 0;
-    const busy = ['thinking', 'working', 'waiting'].includes(a.status);
+    // 답을 마치고 다음 지시를 기다리는 세션은 바쁘지 않다(서버도 받는다). 권한 확인 창은 바쁘다.
+    const busy = isBusy(a);
     const blocked = this.sendBlocked.get(a.id);
     const sendReason = !isMain ? CARD_KO.sendSub : busy ? CARD_KO.sendBusy : blocked || '';
     const convo =
@@ -358,7 +359,7 @@ export class Hud {
         <button type="button" class="icon-btn close" aria-label="닫기">${icon('x')}</button>
       </div>
       <div class="status-row">
-        <span class="status-chip" style="--c:${color}"><span class="dot"></span>${STATUS_LABEL[a.status]}</span>
+        <span class="status-chip" style="--c:${color}"><span class="dot"></span>${isIdleWait(a) ? IDLE_WAIT_KO : STATUS_LABEL[a.status]}</span>
         <span class="source">${esc(sourceLabel(a.source))}</span>
       </div>
       <dl class="facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
@@ -373,7 +374,7 @@ export class Hud {
       ${
         parent || crew.length
           ? `<div class="links">${parent ? `<button type="button" class="person" data-id="${esc(parent.id)}">${esc(parent.name)}에게 보고해요</button>` : ''}${crew
-              .map((c) => `<button type="button" class="person" data-id="${esc(c.id)}"><span class="mini-dot" style="background:${STATUS_COLORS[c.status]}"></span>${esc(c.name)}</button>`)
+              .map((c) => `<button type="button" class="person" data-id="${esc(c.id)}"><span class="mini-dot" style="background:${STATUS_COLORS[effectiveStatus(c, Date.now())]}"></span>${esc(c.name)}</button>`)
               .join('')}</div>`
           : ''
       }
@@ -734,7 +735,7 @@ export class Hud {
   }
 
   private updateTag(tag: Tag, a: Agent, shown: string, inMeeting: boolean) {
-    const key = `${shown}|${a.name}|${a.role}|${a.status}|${a.activity}|${inMeeting}|${a.lastPrompt}`;
+    const key = `${shown}|${a.name}|${a.role}|${a.status}|${a.waitKind}|${a.activity}|${inMeeting}|${a.lastPrompt}`;
     if (key === tag.key) return;
     tag.key = key;
     tag.dirty = true;
@@ -743,14 +744,16 @@ export class Hud {
     // 직무 이름은 이름표가 짧게 유지될 때만 붙인다(이름과 직무 합쳐 16자 이하).
     const jobRole = describeJob(a).role;
     tag.job.textContent = a.name.length + jobRole.length <= TAG_JOB_MAX ? jobRole : '';
-    tag.dot.style.background = STATUS_COLORS[a.status];
-    tag.root.dataset.status = a.status;
-    const label = inMeeting ? PILL_MEETING_KO : PILL_KO[a.status];
+    const idleWait = isIdleWait(a);
+    const shownStatus = idleWait ? 'idle' : a.status;
+    tag.dot.style.background = STATUS_COLORS[shownStatus];
+    tag.root.dataset.status = shownStatus;
+    const label = inMeeting ? PILL_MEETING_KO : idleWait ? IDLE_WAIT_PILL_KO : PILL_KO[a.status];
     const raw = pillDetail(a.activity);
-    const detail = a.status === 'idle' || [label, STATUS_LABEL[a.status], PILL_KO[a.status]].includes(raw) ? '' : raw;
+    const detail = shownStatus === 'idle' || [label, STATUS_LABEL[a.status], PILL_KO[a.status]].includes(raw) ? '' : raw;
     tag.pill.textContent = label + (detail ? `: ${detail}` : '');
-    tag.pill.dataset.kind = inMeeting ? 'meeting' : a.status;
-    tag.activity.textContent = a.activity || STATUS_LABEL[a.status];
+    tag.pill.dataset.kind = inMeeting ? 'meeting' : shownStatus;
+    tag.activity.textContent = a.activity || (idleWait ? IDLE_WAIT_KO : STATUS_LABEL[a.status]);
   }
 
   say(id: string, text: string, toName?: string) {

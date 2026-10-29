@@ -157,8 +157,19 @@ export function isToolFailure(agent) {
   return agent.status === 'error' && typeof agent.activity === 'string' && agent.activity.startsWith(TOOL_FAIL_PREFIX);
 }
 
-/** The status to draw: a tool failure turns back into 'thinking' after TOOL_FAIL_SHOW_MS even if no event follows. */
+/** 답을 마치고 다음 지시를 기다리는 중이다(권한 확인 창이 아니다). 지시를 받을 수 있고, 도움 요청으로 그리지 않는다. */
+export function isIdleWait(agent) {
+  return agent.status === 'waiting' && agent.waitKind === 'idle';
+}
+
+/** 일하는 중이라 화면에서 지시를 보내지 않는다. 다음 지시를 기다리는 waiting은 바쁘지 않고, 권한 확인이나 이유를 모르는 waiting은 바쁘다. */
+export function isBusy(agent) {
+  return agent.status === 'thinking' || agent.status === 'working' || (agent.status === 'waiting' && !isIdleWait(agent));
+}
+
+/** The status to draw: a tool failure turns back into 'thinking' after TOOL_FAIL_SHOW_MS even if no event follows. An idle wait draws calm, like idle. */
 export function effectiveStatus(agent, nowMs) {
+  if (isIdleWait(agent)) return 'idle';
   if (isToolFailure(agent)) {
     const since = agent.lastSeen ?? agent.statusSince; // the failure event itself, also a second failure in a row
     if (since != null && nowMs - since > TOOL_FAIL_SHOW_MS) return 'thinking';

@@ -1,10 +1,10 @@
 import { MeshBasicMaterial } from 'three';
 import type { Agent, Status } from '../../shared/protocol';
 import { STATUS_COLORS } from './palette';
-import { STATUS_LABEL_KO as STATUS_LABEL } from '../ui/labels';
+import { IDLE_WAIT_KO, STATUS_LABEL_KO } from '../ui/labels';
 import { fit, makeCanvas, MONO_FONT, roundRect, UI_FONT, wrap } from './text';
 import { REC } from './quality';
-import { effectiveStatus } from '../../shared/places';
+import { effectiveStatus, isIdleWait } from '../../shared/places';
 import { MONITOR_COLORS, SCROLL_ROWS_PER_SEC, screenMode, toolHue } from '../../shared/monitor';
 
 const RES = REC ? 2 : 1;
@@ -72,6 +72,7 @@ export class Screen {
     }
 
     // Title bar: tool + status
+    const statusText = isIdleWait(agent) ? IDLE_WAIT_KO : STATUS_LABEL_KO[status];
     c.fillStyle = '#161b22';
     c.fillRect(0, 0, W, 54);
     c.fillStyle = status === 'working' ? hue : color;
@@ -80,11 +81,11 @@ export class Screen {
     c.font = `600 24px ${UI_FONT}`;
     c.fillStyle = '#e6edf3';
     c.textBaseline = 'middle';
-    c.fillText(fit(c, agent.tool || STATUS_LABEL[status], 300), 54, 28);
+    c.fillText(fit(c, agent.tool || statusText, 300), 54, 28);
     c.font = `500 18px ${MONO_FONT}`;
     c.fillStyle = color;
     c.textAlign = 'right';
-    c.fillText(STATUS_LABEL[status], W - 20, 28);
+    c.fillText(statusText, W - 20, 28);
     c.textAlign = 'left';
 
     // Activity, large
