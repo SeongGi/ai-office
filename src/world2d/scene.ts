@@ -7,6 +7,7 @@ import { ROOM_INFO } from '../../shared/sidepanel';
 import { circle, item, rbox, setStyle, shape, text, textWidth } from './draw';
 import * as F from './furniture';
 import { isOpenFront, wallSegments } from '../world/walls';
+import { MEETING_CHAIRS } from '../world/trips';
 import { receptionSpot } from './npcs';
 import { PALETTES2D, type Palette2D, type ThemeName } from './palette2d';
 
@@ -380,7 +381,7 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       break;
     case 'meeting':
       F.screenWall(ctx, 0, back + 0.4);
-      F.meetingTable(ctx, 0, -0.3, 1.5, 0.8, 8);
+      F.meetingTable(ctx, 0, -0.3, 1.5, 0.8, MEETING_CHAIRS);
       F.plant(ctx, w / 2 - 0.6, back + 0.6, 1.1);
       F.plant(ctx, -w / 2 + 0.6, d / 2 - 0.7, 1.1);
       break;

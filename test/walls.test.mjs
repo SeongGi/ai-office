@@ -302,6 +302,18 @@ const apart = (a, b) => Math.abs(a.x - b.x) >= 1.9 - 1e-9 || Math.abs(a.z - b.z)
 /** The sprite box of a foot point in room-local coordinates; screen-up is -z in a north room and +z in a south room. */
 const spriteBox = (x, z, side) => ({ x0: x - SPRITE.halfW, x1: x + SPRITE.halfW, z0: side === 'north' ? z - SPRITE.h : z, z1: side === 'north' ? z : z + SPRITE.h });
 
+test('the cats on the meeting chairs do not overlap each other', () => {
+  const chairs = M.roomSpots('meeting', 6.5).slice(0, M.MEETING_CHAIRS);
+  for (let i = 0; i < chairs.length; i++) {
+    for (let j = i + 1; j < chairs.length; j++) {
+      const a = chairs[i];
+      const b = chairs[j];
+      const clear = Math.abs(a.x - b.x) >= SPRITE.halfW * 2 - 1e-9 || Math.abs(a.z - b.z) >= SPRITE.h - 1e-9;
+      assert.ok(clear, `meeting chairs #${i} (${a.x.toFixed(2)}, ${a.z.toFixed(2)}) and #${j} (${b.x.toFixed(2)}, ${b.z.toFixed(2)}) overlap`);
+    }
+  }
+});
+
 test('no two spots of a room are closer than 1.0 m; standing spots of break rooms, booths and the outer meeting ring do not overlap', () => {
   for (const c of allCases()) {
     const P = setup(c.counts);

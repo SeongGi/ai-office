@@ -26,7 +26,7 @@ export const NEWHIRES = [
   { x: 3.4, z: -1.6 },
 ];
 
-export const MEETING_CHAIRS = 8;
+export const MEETING_CHAIRS = 6;
 
 export interface RoomSpot {
   x: number;
@@ -42,17 +42,19 @@ export interface RoomSpot {
 const OUTER_SPOTS = [
   { x: -2.15, z: 1.9 },
   { x: 2.15, z: 1.9 },
-  { x: 0, z: 2.0 },
+  { x: 0, z: 2.15 },
   { x: -2.15, z: -2.2 },
   { x: 2.15, z: -2.2 },
 ];
 const MEETING = { cx: 0, cz: -0.3 };
+/** The chair ring. With six chairs from 30 degrees, the two chairs on each side are 2 * SEAT.rz apart in z, which must clear a 1.4 tall sprite. */
+const SEAT = { rx: 2.05, rz: 1.42 };
 /** The way round the outside of the table that the cats walk along. */
 const WALK = { rx: 2.8, rz: 2.45 };
 function meetingSpot(slot: number): RoomSpot {
   if (slot < MEETING_CHAIRS) {
     const ang = (slot / MEETING_CHAIRS) * Math.PI * 2 + Math.PI / MEETING_CHAIRS;
-    return { x: MEETING.cx + Math.cos(ang) * 2.05, z: MEETING.cz + Math.sin(ang) * 1.35, look: 0, sit: true, work: 0 };
+    return { x: MEETING.cx + Math.cos(ang) * SEAT.rx, z: MEETING.cz + Math.sin(ang) * SEAT.rz, look: 0, sit: true, work: 0 };
   }
   const o = OUTER_SPOTS[slot - MEETING_CHAIRS];
   return { x: o.x, z: o.z, look: 0, sit: false, work: 0 };
