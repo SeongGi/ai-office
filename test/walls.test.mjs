@@ -314,6 +314,26 @@ test('the cats on the meeting chairs do not overlap each other', () => {
   }
 });
 
+test('the meeting room roster hangs outside the building and right of the elevator, also when the north wing has no team room', () => {
+  const book = new M.SeatBook();
+  M.computeLayout(world([2, 3]), book);
+  // Team t0 leaves: t1 keeps its south seat, so the meeting room moves next to the lobby.
+  const only = world([2, 3]);
+  delete only.teams.t0;
+  for (const id of Object.keys(only.agents)) if (only.agents[id].team === 't0') delete only.agents[id];
+  const lonely = { name: 'empty north wing', p: M.computeLayout(only, book) };
+  const worlds = [...allCases().map((c) => ({ name: c.name, p: plan(c.counts) })), lonely];
+  assert.ok(lonely.p.rooms.size === 1 && [...lonely.p.rooms.values()][0].side === 'south', 'the empty north wing case is not built');
+  for (const { name, p } of worlds) {
+    const am = p.amenities.find((a) => a.kind === 'meeting');
+    const o = M.rosterOrigin(am);
+    if (am.side === 'north') assert.ok(o.wall <= p.z0 + 1e-9 && o.dir === -1, `${name}: the roster starts inside the building (wall ${o.wall}, building top ${p.z0})`);
+    else assert.ok(o.wall >= p.z1 - 1e-9 && o.dir === 1, `${name}: the roster starts inside the building (wall ${o.wall}, building bottom ${p.z1})`);
+    if (am.side === 'north') assert.ok(o.x > M.ELEV.x + M.ELEV.halfW, `${name}: the roster starts at x ${o.x}, over the elevator (right edge ${M.ELEV.x + M.ELEV.halfW})`);
+    assert.ok(o.x >= am.rect.x - am.rect.w / 2, `${name}: the roster starts left of the meeting room`);
+  }
+});
+
 test('no two spots of a room are closer than 1.0 m; standing spots of break rooms, booths and the outer meeting ring do not overlap', () => {
   for (const c of allCases()) {
     const P = setup(c.counts);

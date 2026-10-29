@@ -18,6 +18,7 @@ import {
 } from '../../shared/places';
 import type { FloorWorld, WorldPerf } from '../core/worldApi';
 import { toolTag } from '../../shared/sidepanel';
+import { displayName } from '../../shared/role';
 import {
   computeLayout,
   ELEVATOR,
@@ -39,6 +40,7 @@ import { rgba } from './color';
 import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle, star, text, textWidth } from './draw';
 import { drawServerLeds } from './furniture';
+import { rosterOrigin } from './roster';
 import { Npcs } from './npcs';
 import { FarewellChat } from '../world/farewellChat';
 import { PALETTES2D, type ThemeName } from './palette2d';
@@ -46,6 +48,8 @@ import { drawScene, ELEV, sceneBounds, sceneKey, type Rect4, type SceneData } fr
 import './world2d.css';
 
 const ELEVATOR_OPEN_RANGE = 2.6;
+/** The meeting room roster cuts long activities so a line stays about as wide as the room. */
+const ROSTER_ACT_MAX = 22;
 const SPAWN: P = { x: ELEVATOR.x, z: ELEV.plane - 0.55 };
 
 interface Letter {
@@ -683,7 +687,8 @@ export class World2D implements FloorWorld {
         y,
         depth: base - a.z * 0.08,
         visible: a.mode !== 'gone' && !a.leaving && sx > -40 && sx < cam.w + 40 && y > -40 && y < cam.h + 80,
-        resting: a.mode === 'standing' && isBreakKind(a.place),
+        // Cats seated in the meeting room are listed outside its wall instead (drawMeetingRoster): their tags would cover each other's faces.
+        resting: a.mode === 'standing' && (isBreakKind(a.place) || a.place === 'meeting'),
       });
     }
     return out;
@@ -881,6 +886,7 @@ export class World2D implements FloorWorld {
     this.drawBubbles(ctx, t, k);
     this.drawFarewellBubbles(ctx, k);
     this.drawToolTags(ctx, k);
+    this.drawMeetingRoster(ctx, k);
     if (!this.reduced) this.drawParty(ctx, k);
 
     // letters and ripples
@@ -978,6 +984,32 @@ export class World2D implements FloorWorld {
       rbox(ctx, a.x, y, w, 0.27 * k, P.plaque, 0.12 * k, { lw: 0.035 * k, line: P.outline, shadow: false });
       text(ctx, str, a.x, y + 0.01 * k, sz, P.plaqueText, { weight: 700 });
     }
+  }
+
+  /** Who sits in the meeting room, one line per cat outside its outer wall: name and what it does. Their head tags stay hidden (anchors). */
+  private drawMeetingRoster(ctx: CanvasRenderingContext2D, k: number) {
+    const state = this.state;
+    const am = this.plan?.amenities.find((a) => a.kind === 'meeting');
+    if (!state || !am) return;
+    const row: Agent2D[] = [];
+    for (const a of this.agents.values()) if (a.place === 'meeting' && a.mode === 'standing' && !a.leaving && state.agents[a.id]) row.push(a);
+    if (!row.length) return;
+    row.sort((p, q) => p.x - q.x || p.z - q.z);
+    const P = PALETTES2D[this.theme];
+    const sz = 0.2 * k;
+    const lh = 0.36 * k;
+    const { x: x0, wall, dir } = rosterOrigin(am);
+    row.forEach((a, i) => {
+      const ag = state.agents[a.id];
+      const name = displayName(ag, state.agents);
+      const act = (ag.activity || '').trim();
+      const str = act ? `${name}: ${act.length > ROSTER_ACT_MAX ? `${act.slice(0, ROSTER_ACT_MAX - 1)}…` : act}` : name;
+      const hot = a.id === this.hovered || a.id === this.selected;
+      const w = this.bubbleWidth(ctx, str) * sz + 0.3 * k;
+      const y = wall + dir * (0.45 * k + i * lh);
+      rbox(ctx, x0 + w / 2, y, w, 0.3 * k, P.plaque, 0.12 * k, { lw: (hot ? 0.07 : 0.035) * k, line: P.outline, shadow: false });
+      text(ctx, str, x0 + 0.15 * k, y + 0.01 * k, sz, P.plaqueText, { weight: 700, align: 'left' });
+    });
   }
 
   private bubbleWidth(ctx: CanvasRenderingContext2D, str: string) {
