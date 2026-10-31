@@ -55,6 +55,7 @@ const MIME = {
   '.png': 'image/png',
   '.woff2': 'font/woff2',
   '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 export function startServer({
@@ -396,7 +397,12 @@ export function startServer({
     try {
       const body = await readFile(file);
       const cache = file.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
-      res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream', 'Cache-Control': cache });
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(file)] || 'application/octet-stream',
+        'Cache-Control': cache,
+        // 검색엔진과 일반 봇 색인 차단. 실제 접근 제한은 구글 로그인(oauth2-proxy)이 한다.
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
+      });
       res.end(body);
     } catch {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
