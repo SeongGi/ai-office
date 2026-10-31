@@ -79,6 +79,8 @@ export function startServer({
   namesPath = process.env.AGENT_FLOOR_NAMES || join(dirname(auditPath), 'names.json'),
   // 세션의 터미널과 기기 연결을 남기는 파일. 기본은 감사 기록과 같은 폴더.
   routesPath = process.env.AGENT_FLOOR_ROUTES || join(dirname(auditPath), 'routes.json'),
+  // 시작할 때와, 닫기/지시 보내기가 터미널 핸들을 못 찾았을 때 다시 부르는 조회. 테스트가 갈아 끼운다.
+  seedImpl = seedEvents,
 } = {}) {
   const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
   const adminList = listOf(admins);
@@ -135,13 +137,30 @@ export function startServer({
     closeQueue = closeQueue.filter((q) => now - q.ts <= QUEUE_TTL_MS);
   };
 
+  // 서버가 재시작되면 terminals(메모리)가 비워진다. 세션이 그 뒤로 한 번도 움직이지 않았으면
+  // (완료돼서 조용히 있는 세션이 특히 그렇다) handle이 영영 비어 있는다. 지금 다시 찾아본다 —
+  // seed.mjs와 같은 방식(~/.claude/sessions의 pid로 터미널 핸들 복구)을 그 세션 하나에 대해 재실행한다.
+  function recoverHandle(id) {
+    try {
+      for (const ev of seedImpl()) {
+        if (ev.agent !== id || !ev.terminal) continue;
+        terminals.set(id, ev.terminal);
+        if (ev.device) devices.set(id, ev.device);
+        return ev.terminal;
+      }
+    } catch (err) {
+      log(`handle 복구 실패: ${err.message}`);
+    }
+    return undefined;
+  }
+
   // 닫기와 지시가 같이 쓰는 검사. 메인 세션만, 일하지 않을 때만, 터미널 핸들을 알 때만 통과한다.
   // 통과하면 { agent, handle } 를, 막히면 { reason } 을 돌려준다.
   function guardSession(id, doing) {
     const agent = state.agents[id];
-    const handle = terminals.get(id);
     if (!agent) return { reason: '직원을 찾지 못했어요' };
     if (agent.parent) return { reason: `서브에이전트는 ${doing}지 않아요` };
+    const handle = terminals.get(id) || recoverHandle(id);
     if (!handle) return { reason: '아직 이 세션과 연결 전이에요. 세션이 한 번 움직이면 연결돼요' };
     if (['thinking', 'working'].includes(agent.status)) return { reason: `일하는 중이라 ${doing}지 않았어요`, busy: true };
     if (agent.status === 'waiting') {
@@ -341,7 +360,7 @@ export function startServer({
 
   if (seed) {
     try {
-      for (const ev of seedEvents()) ingest(ev);
+      for (const ev of seedImpl()) ingest(ev);
     } catch (err) {
       log(`seed failed: ${err.message}`);
     }

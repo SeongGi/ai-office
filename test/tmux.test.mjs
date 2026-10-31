@@ -123,3 +123,36 @@ test('server: routes.json과 ingest가 tmux 핸들을 받고 잘못된 모양은
     await floor.close();
   }
 });
+
+test('닫기/지시가 터미널 핸들을 못 찾으면, 서버 재시작 없이도 그 자리에서 seed 조회를 다시 해 본다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-recover-'));
+  const f = fakeTmux('claude');
+  let seedCalls = 0;
+  // 서버가 떠 있는 동안 한 번도 handle을 보낸 적 없는 세션. seed.mjs가 ~/.claude/sessions의 pid로
+  // 터미널을 찾아내는 상황을 흉내 낸다(실제 홈 디렉토리는 건드리지 않는다).
+  const seedImpl = () => {
+    seedCalls++;
+    return [{ type: 'join', agent: 'cold', team: 'T', status: 'idle', terminal: PANE, device: '서버기기' }];
+  };
+  const floor = await startServer({
+    port: 0, log: () => {}, seed: false, token: '', admins: 'me@test.dev', trustProxyEmail: true,
+    allowBypassSend: false, machinePort: null, auditPath: join(dir, 'a.log'), device: '서버기기', execFileImpl: f, seedImpl,
+  });
+  const base = `http://127.0.0.1:${floor.server.address().port}`;
+  const H = { 'Content-Type': 'application/json', 'x-auth-request-email': 'me@test.dev' };
+  try {
+    // 핸들도 기기도 없이 join한다 — 서버가 재시작된 뒤 아직 한 번도 움직이지 않은 세션과 같은 모양.
+    await fetch(`${base}/events`, { method: 'POST', headers: H, body: JSON.stringify([{ type: 'join', agent: 'cold', team: 'T', status: 'idle' }]) });
+    assert.equal(seedCalls, 0, '아직은 복구를 시도할 이유가 없다');
+    const sent = await (await fetch(`${base}/send`, { method: 'POST', headers: H, body: JSON.stringify({ agent: 'cold', text: 'hi' }) })).json();
+    assert.deepEqual(sent, { sent: true });
+    assert.ok(seedCalls >= 1, 'handle이 없으면 즉석에서 seed 조회를 다시 불러야 한다');
+    // 한 번 복구되면 캐시되어, 다음 호출은 다시 seed를 뒤지지 않는다.
+    const before = seedCalls;
+    const closed = await (await fetch(`${base}/close`, { method: 'POST', headers: H, body: JSON.stringify({ agent: 'cold' }) })).json();
+    assert.deepEqual(closed, { closed: true });
+    assert.equal(seedCalls, before, '한 번 찾은 handle은 다시 조회하지 않는다');
+  } finally {
+    await floor.close();
+  }
+});
