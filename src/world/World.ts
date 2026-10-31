@@ -68,6 +68,8 @@ interface Seated {
   place: Place | 'farewell';
   main: boolean;
   farewell?: boolean;
+  /** `this.elapsed` time to actually start walking to the exit (lets the farewell party gather first). */
+  departAt?: number;
 }
 
 export interface Anchor {
@@ -548,16 +550,26 @@ export class World {
     const s = this.agents.get(id);
     if (!s || s.leaving) return;
     s.leaving = true;
-    if (s.main && !this.reduced) {
+    if (this.reduced) return this.dropAgent(id);
+    if (s.main) {
+      // Hold the leaver at their desk a moment so the farewell party has time to gather and start
+      // talking before anyone walks off — otherwise the leaver reaches the exit alone and unseen.
       s.farewell = true;
       this.farewells++;
       this.chat.setLeaver(this.state?.agents[id]?.name ?? '');
       this.updatePlaces();
+      s.departAt = this.elapsed + FAREWELL_DEPART_DELAY;
+      return;
     }
+    this.startLeaveWalk(id);
+  }
+
+  /** Walk back out the way they came: through the office door, down the corridor, out the front. */
+  private startLeaveWalk(id: string) {
+    const s = this.agents.get(id);
+    if (!s) return;
     const room = this.layout.get(s.team);
-    // Walk back out the way they came: through the office door, down the corridor, out the front.
     const exit: [number, number][] = room ? room.exit : [[0, 6]];
-    if (this.reduced) return this.dropAgent(id);
     s.character.leave(exit, () => this.dropAgent(id));
   }
 
@@ -881,6 +893,10 @@ export class World {
     this.screenBudget = 10;
     this.frustum.setFromProjectionMatrix(this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     for (const [id, s] of this.agents) {
+      if (s.departAt !== undefined && this.elapsed >= s.departAt) {
+        s.departAt = undefined;
+        this.startLeaveWalk(id);
+      }
       s.character.update(dt, this.elapsed, this.reduced);
       const agent = this.state?.agents[id];
       if (agent) {
@@ -972,6 +988,10 @@ export class World {
 
 /** Seconds a camera flight takes to (almost) arrive. */
 const FLIGHT_RESPONSE = 1.1;
+
+/** Seconds a leaving cat waits at their desk before walking out, so the farewell party (FarewellChat's
+ *  own FIRST_DELAY) has time to gather and start talking before the leaver is gone. */
+const FAREWELL_DEPART_DELAY = 2.4;
 
 /** One critically damped spring step per axis (Apple's response/damping model, damping = 1). */
 function springStep(x: Vector3, v: Vector3, goal: Vector3, response: number, dt: number) {
