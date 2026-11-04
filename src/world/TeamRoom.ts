@@ -260,7 +260,11 @@ export class TeamRoom {
     }
 
     const statuses = agents.map((a) => a.status).join(',');
-    const boardKey = `${team.task}|${statuses}`;
+    // 칠판 글은 TodoWrite 때만 채워진다. 그 도구를 안 쓰거나 seed로 올라온 방은 메인 세션의 마지막 지시를 대신 보여 준다.
+    const prompt = agents.find((a) => !a.parent && a.lastPrompt)?.lastPrompt?.replace(/\s+/g, ' ').trim();
+    const boardText = team.task || prompt || '';
+    const boardLabel = team.task || !prompt ? '지금 하는 일' : '최근 지시';
+    const boardKey = `${boardLabel}|${boardText}|${statuses}`;
     if (boardKey !== this.boardKey) {
       this.boardKey = boardKey;
       const { ctx, canvas, texture } = this.boardTex;
@@ -269,10 +273,10 @@ export class TeamRoom {
       ctx.fillStyle = '#8a94a6';
       ctx.font = `600 34px ${UI_FONT}`;
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText('지금 하는 일', 36, 66);
+      ctx.fillText(boardLabel, 36, 66);
       ctx.fillStyle = '#1e2430';
       ctx.font = `700 54px ${UI_FONT}`;
-      const lines = wrap(ctx, team.task || '아직 올라온 할 일이 없어요', canvas.width - 72, 3);
+      const lines = wrap(ctx, boardText || '아직 올라온 할 일이 없어요', canvas.width - 72, 3);
       lines.forEach((l, i) => ctx.fillText(l, 36, 136 + i * 62));
       // Marker doodle: a hand-drawn underline.
       ctx.strokeStyle = teamAccent(team.hue).getStyle();

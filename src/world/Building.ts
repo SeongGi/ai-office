@@ -1,6 +1,6 @@
 import { Group, MeshStandardMaterial, PlaneGeometry, Vector3, type Camera } from 'three';
 import { disposeKit, Kit } from './kit';
-import { G } from './materials';
+import { clay, G } from './materials';
 import { damp } from './motion';
 import { PALETTES, hash, type ThemeName } from './palette';
 import {
@@ -10,11 +10,13 @@ import {
   boxes,
   chair,
   clock,
+  consoleDesk,
   coffeeTable,
   FABRICS,
   floorGeo,
   floorLamp,
   glassMat,
+  globe,
   hangingPlant,
   island,
   kanban,
@@ -30,6 +32,7 @@ import {
   receptionDesk,
   reseed,
   roundTable,
+  serverRackLive,
   sideTable,
   sofa,
   texturedBox,
@@ -37,6 +40,8 @@ import {
   vendingMachine,
   waterCooler,
 } from './props';
+import { serverRacks, type ToolRoomKind } from './toolRooms';
+import { ToolSigns } from './toolSigns';
 import { grass, logoMaterial, paving, planks, terrazzo } from './textures';
 import { CORRIDOR, LOBBY_WIDTH, OFFICE_D, SEGMENT, WALL_H, type AmenityKind, type BuildingLayout } from './layout';
 
@@ -83,6 +88,7 @@ export class Building {
   private units = new Map<string, Section>();
   private lobby: Section | null = null;
   private theme: ThemeName = 'light';
+  private signs = new ToolSigns();
 
   // Tall exterior walls get their own material instances so they can fade.
   private wallFade = new MeshStandardMaterial({ roughness: 0.9, transparent: true });
@@ -162,6 +168,7 @@ export class Building {
 
   setTheme(theme: ThemeName) {
     this.theme = theme;
+    this.signs.setTheme(theme);
     const p = PALETTES[theme];
     const night = theme === 'dark';
     for (const m of [this.wallFade, this.westFade]) m.color.set(p.wall);
@@ -172,6 +179,11 @@ export class Building {
     this.floors.slab.color.set(night ? '#2a2f37' : '#c9ced6');
     this.floors.carpetGrey.color.set(night ? '#2c313a' : '#b9c0ca');
     this.floors.rubber.color.set(night ? '#2b3540' : '#7d9bb5');
+  }
+
+  /** How many cats stand in each tool room, shown on its sign. */
+  setToolCounts(counts: Partial<Record<ToolRoomKind, number>>) {
+    this.signs.setCounts(counts);
   }
 
   /** Fade the tall exterior walls when the camera swings behind them. */
@@ -393,6 +405,16 @@ export class Building {
     for (let i = 0; i <= posts; i++) k.add(G.box(0.08, 1.6, 0.05), M.charcoal(), x, 1.9, zFrom + ((zTo - zFrom) * i) / posts);
   }
 
+  /** A two-sided placard on legs near the door: what the room is for. Both faces read correctly from either side. */
+  private toolSign(k: Kit, kind: ToolRoomKind, x: number, z: number) {
+    const mat = this.signs.material(kind);
+    const geo = new PlaneGeometry(1.6, 0.75);
+    for (const sx of [-0.7, 0.7]) k.add(G.box(0.05, 0.95, 0.05), M.charcoal(), x + sx, 0.475, z);
+    k.add(G.box(1.7, 0.85, 0.04), M.charcoal(), x, 1.35, z);
+    k.add(geo, mat, x, 1.35, z + 0.023, { cast: false });
+    k.add(geo, mat, x, 1.35, z - 0.023, { cast: false, ry: Math.PI });
+  }
+
   private furnishAmenity(k: Kit, kind: AmenityKind, side: 'north' | 'south', w: number, zMid: number) {
     const yaw = side === 'north' ? 0 : Math.PI;
     const d = OFFICE_D;
@@ -452,6 +474,62 @@ export class Building {
         plantTall(k, -w / 2 + 0.5, back + 0.5);
         boxes(k, w / 2 - 0.6, d / 2 - 0.8, 0.3);
         for (const x of [-0.8, 0.8]) pendant(k, x, -0.4, 2.3, '#ff5f2e');
+        break;
+      }
+      case 'interview': {
+        // A small table with two chairs facing each other, and a board on the wall.
+        k.add(G.rbox(4.0, 0.02, 2.6, 0.03), M.charcoal(), 0, 0.012, -0.4, { cast: false });
+        k.add(G.rbox(1.3, 0.05, 0.7, 0.025), M.wood(), 0, 0.74, -0.45);
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) k.add(G.box(0.05, 0.72, 0.05), M.charcoal(), sx * 0.55, 0.36, -0.45 + sz * 0.27);
+        k.add(G.rbox(0.24, 0.012, 0.32, 0.004), M.paper(), -0.25, 0.77, -0.45);
+        k.add(G.rbox(0.22, 0.012, 0.28, 0.004), M.paper(), 0.28, 0.77, -0.45);
+        chair(k, -1.25, -0.45, Math.PI / 2, FABRICS[0]);
+        chair(k, 1.25, -0.45, -Math.PI / 2, FABRICS[2]);
+        kanban(k, 0, 1.6, back + 0.06, 0, 1.6);
+        plantTall(k, -w / 2 + 0.5, d / 2 - 0.6);
+        pendant(k, 0, -0.45, 2.25, '#22252b');
+        break;
+      }
+      case 'library': {
+        // Bookshelves on three walls, a reading table with an open book and a lamp.
+        k.add(G.rbox(Math.min(3.6, w - 1.0), 0.02, 2.5, 0.03), M.charcoal(), 0, 0.012, -0.4, { cast: false });
+        bookshelf(k, -w / 4, back + 0.2, 0, w / 2 - 0.25, 2.1);
+        bookshelf(k, w / 4, back + 0.2, 0, w / 2 - 0.25, 2.1);
+        bookshelf(k, -w / 2 + 0.25, -1.9, Math.PI / 2, 2.6, 2.0);
+        bookshelf(k, w / 2 - 0.25, -1.9, -Math.PI / 2, 2.6, 2.0);
+        bookshelf(k, -w / 2 + 0.25, 1.2, Math.PI / 2, 2.0, 1.6);
+        bookshelf(k, w / 2 - 0.25, 1.2, -Math.PI / 2, 2.0, 1.6);
+        k.add(G.rbox(1.6, 0.05, 0.8, 0.025), M.wood(), 0, 0.74, -0.45);
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) k.add(G.box(0.05, 0.72, 0.05), M.woodDark(), sx * 0.72, 0.36, -0.45 + sz * 0.32);
+        k.add(G.rbox(0.34, 0.015, 0.24, 0.004), M.paper(), -0.2, 0.775, -0.45, { ry: 0.2 });
+        k.add(G.rbox(0.34, 0.015, 0.24, 0.004), M.cardboard(), 0.18, 0.775, -0.45, { ry: -0.1 });
+        floorLamp(k, w / 2 - 0.8, -3.0);
+        plantTall(k, w / 2 - 0.5, d / 2 - 0.6);
+        pendant(k, 0, -0.45, 2.3, '#f2cc8f');
+        this.toolSign(k, 'library', -w / 2 + 1.25, d / 2 - 1.0);
+        break;
+      }
+      case 'server': {
+        k.add(G.rbox(Math.min(3.2, w - 1.0), 0.02, 2.2, 0.03), M.charcoal(), 0, 0.012, 0.2, { cast: false });
+        for (const r of serverRacks(w)) serverRackLive(k, r.x, r.z + (r.rot ? 0 : 0.2), r.rot === 0 ? 0 : r.x < 0 ? Math.PI / 2 : -Math.PI / 2);
+        consoleDesk(k, 0, 0.3, 0, 2.0, ['#6bd6ff', '#9be7a5']);
+        plantTall(k, w / 2 - 0.5, d / 2 - 0.6);
+        pendant(k, 0, 0.3, 2.3, '#22252b');
+        this.toolSign(k, 'server', -w / 2 + 1.25, d / 2 - 1.0);
+        break;
+      }
+      case 'search': {
+        for (let i = 0; i < 3; i++) {
+          const mx = (i - 1) * 1.4;
+          const col = ['#8fd3ff', '#b9a6ff', '#a6e3b5'][i];
+          k.add(G.rbox(1.2, 0.72, 0.05, 0.015), M.black(), mx, 1.75, back + 0.08);
+          k.add(G.box(1.12, 0.64, 0.01), clay(col, { emissive: col, emissiveIntensity: 0.55 }), mx, 1.75, back + 0.115, { cast: false });
+        }
+        consoleDesk(k, 0, -1.05, 0, 2.2, ['#8fd3ff', '#ffd27a']);
+        globe(k, -w / 2 + 0.85, -2.4);
+        plantTall(k, w / 2 - 0.5, d / 2 - 0.6);
+        pendant(k, 0, -1.0, 2.3, '#22252b');
+        this.toolSign(k, 'search', -w / 2 + 1.25, d / 2 - 1.0);
         break;
       }
       case 'booths': {

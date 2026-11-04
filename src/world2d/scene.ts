@@ -3,8 +3,11 @@
 import type { Team } from '../../shared/protocol';
 import { CORRIDOR, ELEVATOR, LOBBY_WIDTH, OFFICE_D, type AmenityKind, type BuildingLayout, type RoomLayout } from '../world/layout';
 import { lighten, mix } from './color';
+import { ROOM_INFO } from '../../shared/sidepanel';
 import { circle, item, rbox, setStyle, shape, text, textWidth } from './draw';
 import * as F from './furniture';
+import { isOpenFront, wallSegments } from '../world/walls';
+import { MEETING_CHAIRS } from '../world/trips';
 import { receptionSpot } from './npcs';
 import { PALETTES2D, type Palette2D, type ThemeName } from './palette2d';
 
@@ -43,8 +46,8 @@ export function sceneKey(d: SceneData) {
   return `${d.theme}|${d.plan.x1.toFixed(2)}|${rooms}|${am}`;
 }
 
-const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스' };
-const AMENITY_TINT: Record<AmenityKind, string> = { kitchen: '#e4f4e8', meeting: '#ebe4f8', lounge: '#fbe8e2', games: '#e1f1f8', booths: '#eceff7' };
+const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스', interview: '면접실', library: '자료실', server: '서버실', search: '정보검색실' };
+const AMENITY_TINT: Record<AmenityKind, string> = { kitchen: '#e4f4e8', meeting: '#ebe4f8', lounge: '#fbe8e2', games: '#e1f1f8', booths: '#eceff7', interview: '#f6ecd9', library: '#f1ead8', server: '#e3e8f3', search: '#e2f0f6' };
 
 const yawOf = (side: 'north' | 'south') => (side === 'north' ? 0 : Math.PI);
 const roomDoorX = (r: RoomLayout) => r.x + (r.side === 'north' ? r.doorX : -r.doorX);
@@ -66,7 +69,7 @@ function unitsOf(d: SceneData, P: Palette2D): Unit[] {
     out.push({ side: r.side, x0: r.x - r.w / 2, w: r.w, door: roomDoorX(r), open: false, label: team.name, accent: P.accent(team.hue) });
   }
   for (const a of d.plan.amenities) {
-    const open = a.kind === 'kitchen' || a.kind === 'lounge' || a.kind === 'games';
+    const open = isOpenFront(a.kind);
     out.push({ side: a.side, x0: a.rect.x - a.rect.w / 2, w: a.rect.w, door: open ? null : a.rect.x, open, label: AMENITY_NAME[a.kind], accent: null });
   }
   return out;
@@ -151,6 +154,12 @@ export function drawScene(ctx: Ctx, d: SceneData, cull: Rect4 | null) {
   // --- walls
   drawWalls(ctx, P, plan, unitsOf(d, P), body);
 
+  // --- what each tool room is for, on its back wall
+  for (const a of plan.amenities) {
+    const q = a.rect;
+    if ((a.kind === 'library' || a.kind === 'server' || a.kind === 'search') && hit(cull, q.x - q.w / 2, q.z - q.d / 2, q.x + q.w / 2, q.z + q.d / 2)) drawUsePlaque(ctx, P, a.kind, q.x, a.side === 'north' ? q.z - q.d / 2 + 0.34 : q.z + q.d / 2 - 0.34, q.w);
+  }
+
   // --- elevator facade, then plaques
   drawElevatorFrame(ctx, P);
   for (const u of unitsOf(d, P)) {
@@ -182,20 +191,7 @@ export function drawScene(ctx: Ctx, d: SceneData, cull: Rect4 | null) {
 // ---------------------------------------------------------------- walls and signs
 
 function drawWalls(ctx: Ctx, P: Palette2D, plan: BuildingLayout, units: Unit[], body: () => void) {
-  const zN = -CORRIDOR / 2;
-  const zS = CORRIDOR / 2;
-  const segs: [number, number, number, number][] = [];
-  const GAP = 0.62;
-  for (const u of units) {
-    const outerZ = u.side === 'north' ? plan.z0 : plan.z1;
-    const wallZ = u.side === 'north' ? zN : zS;
-    segs.push([u.x0, outerZ, u.x0, wallZ], [u.x0 + u.w, outerZ, u.x0 + u.w, wallZ]);
-    if (u.open) {
-      segs.push([u.x0, wallZ, u.x0 + 0.9, wallZ], [u.x0 + u.w - 0.9, wallZ, u.x0 + u.w, wallZ]);
-    } else if (u.door !== null) {
-      segs.push([u.x0, wallZ, u.door - GAP, wallZ], [u.door + GAP, wallZ, u.x0 + u.w, wallZ]);
-    }
-  }
+  const segs = wallSegments(plan, units);
   const trace = () => {
     ctx.beginPath();
     for (const [x1, z1, x2, z2] of segs) {
@@ -236,6 +232,17 @@ function splitLabel(label: string): [string, string] {
   if (at < 0) return [label.slice(0, Math.ceil(mid)), label.slice(Math.ceil(mid))];
   const sep = /\s/.test(label[at]);
   return [label.slice(0, sep ? at : at + 1).trim(), label.slice(at + 1).trim()];
+}
+
+/** Two lines on the back wall of a tool room: what it is for, and which tools. Same colours as the door plaques, so night works too. */
+function drawUsePlaque(ctx: Ctx, P: Palette2D, kind: 'library' | 'server' | 'search', x: number, z: number, roomW: number) {
+  const info = ROOM_INFO[kind];
+  const s1 = 0.26;
+  const s2 = 0.2;
+  const w = Math.min(roomW - 0.3, Math.max(textWidth(ctx, info.use, s1), textWidth(ctx, info.tools, s2, 600)) + 0.5);
+  rbox(ctx, x, z, w, 0.88, P.plaque, 0.22, { lw: 0.05, line: P.outline });
+  text(ctx, info.use, x, z - 0.17, s1, P.plaqueText);
+  text(ctx, info.tools, x, z + 0.2, s2, P.plaqueText, { weight: 600 });
 }
 
 function drawPlaque(ctx: Ctx, P: Palette2D, u: Unit) {
@@ -352,24 +359,35 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
   const back = -d / 2;
   switch (kind) {
     case 'kitchen':
-      F.kitchenRun(ctx, 0, back + 0.55, Math.min(w - 2.4, 5.0));
+      F.kitchenRun(ctx, 0, back + 0.55, w - 2.5);
       F.fridge(ctx, w / 2 - 0.9, back + 0.55);
       F.island(ctx, -0.3, -0.5, 2.4);
       F.roundTable(ctx, -w / 2 + 1.5, 2.1, 0.55, 3);
-      if (w >= F.INTERVIEW_MIN_W) F.interviewSet(ctx);
-      else F.roundTable(ctx, w / 2 - 1.5, 2.0, 0.55, 3);
+      F.roundTable(ctx, w / 2 - 1.5, 2.0, 0.55, 3);
       F.vending(ctx, -w / 2 + 0.7, back + 0.55);
       F.plant(ctx, -w / 2 + 0.6, 0.4, 1.0);
       break;
+    case 'interview':
+      if (w >= F.INTERVIEW_MIN_W) F.interviewRoom(ctx, w);
+      break;
+    case 'library':
+      F.libraryRoom(ctx, w);
+      break;
+    case 'server':
+      F.serverRoom(ctx, w);
+      break;
+    case 'search':
+      F.searchRoom(ctx, w);
+      break;
     case 'meeting':
       F.screenWall(ctx, 0, back + 0.4);
-      F.meetingTable(ctx, 0, -0.3, 1.5, 0.8, 8);
+      F.meetingTable(ctx, 0, -0.3, 1.5, 0.8, MEETING_CHAIRS);
       F.plant(ctx, w / 2 - 0.6, back + 0.6, 1.1);
       F.plant(ctx, -w / 2 + 0.6, d / 2 - 0.7, 1.1);
       break;
     case 'lounge':
       F.rug(ctx, 0.2, -0.4, 4.8, 3.4, P.dark ? '#4f4486' : '#ffd4cc', true);
-      F.sofa(ctx, 0.2, -2.1, 0, 2.8, P.sofa[0]);
+      F.sofa(ctx, 0.2, -2.1, 0, 3.2, P.sofa[0]);
       F.armchair(ctx, -2.3, -0.2, Math.PI / 2, P.sofa[2]);
       F.armchair(ctx, 2.7, -0.2, -Math.PI / 2, P.sofa[1]);
       F.coffeeTable(ctx, 0.2, -0.4, 1.4, 0.7);
@@ -377,7 +395,8 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.beanbag(ctx, w / 2 - 1.0, 2.2, P.sofa[3]);
       F.beanbag(ctx, w / 2 - 2.0, 2.7, P.sofa[2]);
       F.bookshelf(ctx, -w / 2 + 0.3, -1.0, Math.PI / 2, 1.8);
-      F.plant(ctx, w / 2 - 0.6, back + 0.6, 1.1);
+      if (w >= F.NEWHIRE_MIN_W) F.newHireBench(ctx);
+      F.plant(ctx, w / 2 - (w >= F.NEWHIRE_MIN_W ? 0.4 : 0.6), w >= F.NEWHIRE_MIN_W ? 0.9 : back + 0.6, 1.1);
       F.plant(ctx, -w / 2 + 0.6, back + 0.6, 1.1);
       break;
     case 'games':
@@ -387,15 +406,8 @@ function drawAmenity(ctx: Ctx, P: Palette2D, kind: AmenityKind, w: number) {
       F.vending(ctx, w / 2 - 0.7, back + 0.6, '#8ec9ff');
       F.plant(ctx, -w / 2 + 0.6, back + 0.6, 1.1);
       break;
-    case 'booths': {
-      const n = Math.max(1, Math.floor((w - 0.4) / 1.6));
-      for (let i = 0; i < n; i++) {
-        const bx = -w / 2 + 1.0 + i * 1.6;
-        if (bx > w / 2 - 0.6) break;
-        F.booth(ctx, bx, back + 1.0, P.chairs[i % P.chairs.length]);
-      }
-      if (w > 2.5) F.plant(ctx, w / 2 - 0.55, d / 2 - 0.8, 1.0);
+    case 'booths':
+      F.booths(ctx, w);
       break;
-    }
   }
 }

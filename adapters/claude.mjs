@@ -2,6 +2,7 @@
 // Receives the JSON object Claude Code writes to a hook's stdin.
 // https://docs.claude.com/en/docs/claude-code/hooks
 import { describeTool, deviceName, pretty, shortId, shortToolName, slugKey, teamFromCwd } from './common.mjs';
+import { TOOL_FAIL_PREFIX } from '../shared/places.js';
 import { clipText, readTranscriptTail, readTranscriptTitle, shortTitle } from './transcript.mjs';
 
 const SPAWN_TOOLS = new Set(['Task', 'Agent']);
@@ -31,7 +32,12 @@ export function fromClaude(input, opts = {}) {
     ...(input.model ? { model: String(input.model) } : {}),
     ...(input.cwd ? { cwd: String(input.cwd) } : {}),
     // Orca 터미널 핸들. 퇴사 버튼이 이 세션을 닫을 때 서버가 쓴다(서버 메모리에만 둔다).
-    ...(process.env.ORCA_TERMINAL_HANDLE ? { terminal: process.env.ORCA_TERMINAL_HANDLE } : {}),
+    // Orca가 아니라 tmux 안에서 돌면 TMUX_PANE(%N)으로 대신한다.
+    ...(process.env.ORCA_TERMINAL_HANDLE
+      ? { terminal: process.env.ORCA_TERMINAL_HANDLE }
+      : /^%\d{1,6}$/.test(process.env.TMUX_PANE || '')
+        ? { terminal: 'tmux:' + process.env.TMUX_PANE }
+        : {}),
     // 어느 기기 세션인지. 서버가 닫기 요청을 그 기기로 보낼 때 쓴다(서버 메모리에만 둔다).
     ...(deviceName() ? { device: deviceName() } : {}),
     // 권한 모드(default, plan, bypassPermissions 등). 지시 보내기 안전장치가 쓴다.
@@ -101,8 +107,16 @@ export function fromClaude(input, opts = {}) {
       return [{ type: 'status', ...actor, status: 'thinking', activity: `마쳤어요: ${describeTool(tool, toolInput)}` }];
     }
 
-    case 'Notification':
-      return [{ type: 'status', ...base, status: 'waiting', activity: input.message || '답을 기다려요' }];
+    case 'PostToolUseFailure':
+      // 도구가 실패했다. 다음 도구 훅이나 멈춤 훅이 오면 지워지고, 안 와도 화면이 4초 뒤 생각 중으로 돌린다(effectiveStatus).
+      return [{ type: 'status', ...actor, status: 'error', activity: `${TOOL_FAIL_PREFIX}: ${shortToolName(tool) || '도구'}` }];
+
+    case 'Notification': {
+      // 알림 종류 필드 이름은 문서에 확실하지 않아 notification_type과 type을 모두 본다. 모르는 값은 비운다.
+      const kind = String(input.notification_type ?? input.type ?? '');
+      const waitKind = kind === 'idle_prompt' ? 'idle' : kind === 'permission_prompt' || kind === 'elicitation_dialog' ? 'permission' : undefined;
+      return [{ type: 'status', ...base, status: 'waiting', activity: input.message || '답을 기다려요', ...(waitKind ? { waitKind } : {}) }];
+    }
 
     case 'Stop': {
       // Claude Code가 마지막 답을 주면 그대로 쓰고, 없으면 세션 기록 끝에서 찾는다.

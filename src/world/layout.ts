@@ -26,6 +26,13 @@ const LOBBY_W = 10;
 const KITCHEN_W = 7.5;
 const MEETING_W = 6.5;
 const LOUNGE_W = 9;
+const INTERVIEW_W = 5.6;
+/** 도구 방: 자료실, 서버실, 정보검색실. 항상 만든다. 렌더러는 방이 없거나 자리가 다 찼으면 고양이를 자리에 둔다. */
+export const TOOL_ROOM_W = { library: 5.0, server: 4.8, search: 4.8 } as const;
+/** 게임존은 고정 방이다. 채움 방이 아니라서 도구 방이 늘어도 사라지지 않는다. */
+const GAMES_W = 6.5;
+/** 1인 부스 채움 방의 최소 폭. 이보다 좁은 틈은 열린 방(라운지, 게임존, 주방)을 넓혀 메운다. */
+export const BOOTHS_MIN_W = 3.4;
 export const LOBBY_WIDTH = LOBBY_W;
 export const BUILDING_X0 = -24;
 /** 로비 북쪽 벽에 붙은 엘리베이터 위치(월드). 문은 +Z(로비 안쪽)를 본다. */
@@ -72,7 +79,7 @@ export interface Rect {
   d: number;
 }
 
-export type AmenityKind = 'kitchen' | 'meeting' | 'lounge' | 'games' | 'booths';
+export type AmenityKind = 'kitchen' | 'meeting' | 'lounge' | 'games' | 'booths' | 'interview' | 'library' | 'server' | 'search';
 
 export interface Amenity {
   kind: AmenityKind;
@@ -259,14 +266,32 @@ export function computeLayout(state: WorldState, book: SeatBook): BuildingLayout
   const amenities: { kind: AmenityKind; w: number; side: 'north' | 'south' }[] = [
     { kind: 'meeting', w: MEETING_W, side: 'north' },
     { kind: 'kitchen', w: KITCHEN_W, side: 'north' },
+    { kind: 'interview', w: INTERVIEW_W, side: 'south' },
     { kind: 'lounge', w: LOUNGE_W, side: 'south' },
   ];
-  const lenN = wingLen.north + MEETING_W + KITCHEN_W;
-  const lenS = wingLen.south + LOUNGE_W;
+  let lenN = wingLen.north + MEETING_W + KITCHEN_W;
+  let lenS = wingLen.south + INTERVIEW_W + LOUNGE_W;
+  // 게임존과 도구 방은 그때그때 더 짧은 쪽 날개 끝에 붙인다. 남는 길이 차이는 아래 1인 부스가 메운다.
+  const tail = [['games', GAMES_W], ['library', TOOL_ROOM_W.library], ['server', TOOL_ROOM_W.server], ['search', TOOL_ROOM_W.search]] as const;
+  for (const [kind, w] of tail) {
+    const side = lenN <= lenS ? 'north' : 'south';
+    amenities.push({ kind, w, side });
+    if (side === 'north') lenN += w;
+    else lenS += w;
+  }
   const wingLength = Math.max(lenN, lenS);
-  const pad = (gap: number): AmenityKind => (gap > 5.5 ? 'games' : 'booths');
-  if (lenS < lenN - 0.01) amenities.splice(2, 0, { kind: pad(lenN - lenS), w: lenN - lenS, side: 'south' });
-  if (lenN < lenS - 0.01) amenities.splice(0, 0, { kind: pad(lenS - lenN), w: lenS - lenN, side: 'north' });
+  // 짧은 쪽 틈이 부스 몇 칸이 들어갈 만큼 넓으면 1인 부스로, 아니면 열린 방 하나를 그만큼 넓힌다.
+  const fill = (side: 'north' | 'south', gap: number) => {
+    if (gap >= BOOTHS_MIN_W) {
+      amenities.splice(side === 'north' ? 0 : 2, 0, { kind: 'booths', w: gap, side });
+      return;
+    }
+    const mine = amenities.filter((a) => a.side === side);
+    const target = (['lounge', 'games', 'kitchen'] as const).map((k) => mine.find((a) => a.kind === k)).find(Boolean) ?? mine[mine.length - 1];
+    target.w += gap;
+  };
+  if (lenS < lenN - 0.01) fill('south', lenN - lenS);
+  if (lenN < lenS - 0.01) fill('north', lenS - lenN);
 
   const length = LOBBY_W + wingLength;
   const depth = CORRIDOR + OFFICE_D * 2;

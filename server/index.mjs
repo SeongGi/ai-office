@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TERMINAL_HANDLE_RE } from '../adapters/common.mjs';
 import { seedEvents } from '../adapters/seed.mjs';
 import { closeOrcaTerminal } from '../adapters/orca-close.mjs';
 import { sendOrcaPrompt } from '../adapters/orca-send.mjs';
@@ -28,6 +29,8 @@ import { applyEvent, createState, normalizeEvent, sweep, PROTOCOL_VERSION } from
 const here = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 256 * 1024;
 const QUEUE_TTL_MS = 60_000;
+// 이유를 모르는 waiting을 입력 대기로 보는 기준 시간.
+const WAIT_UNKNOWN_MS = 15 * 60_000;
 const QUEUE_MAX = 200;
 const SEND_MAX_CHARS = 2000;
 const SEND_RATE_MAX = 6;
@@ -52,6 +55,7 @@ const MIME = {
   '.png': 'image/png',
   '.woff2': 'font/woff2',
   '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 export function startServer({
@@ -73,6 +77,10 @@ export function startServer({
   auditPath = process.env.AGENT_FLOOR_AUDIT || resolve(here, '../data/audit.log'),
   // 관리자가 고친 직원 이름을 남기는 파일. 기본은 감사 기록과 같은 폴더.
   namesPath = process.env.AGENT_FLOOR_NAMES || join(dirname(auditPath), 'names.json'),
+  // 세션의 터미널과 기기 연결을 남기는 파일. 기본은 감사 기록과 같은 폴더.
+  routesPath = process.env.AGENT_FLOOR_ROUTES || join(dirname(auditPath), 'routes.json'),
+  // 시작할 때와, 닫기/지시 보내기가 터미널 핸들을 못 찾았을 때 다시 부르는 조회. 테스트가 갈아 끼운다.
+  seedImpl = seedEvents,
 } = {}) {
   const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
   const adminList = listOf(admins);
@@ -129,15 +137,39 @@ export function startServer({
     closeQueue = closeQueue.filter((q) => now - q.ts <= QUEUE_TTL_MS);
   };
 
+  // 서버가 재시작되면 terminals(메모리)가 비워진다. 세션이 그 뒤로 한 번도 움직이지 않았으면
+  // (완료돼서 조용히 있는 세션이 특히 그렇다) handle이 영영 비어 있는다. 지금 다시 찾아본다 —
+  // seed.mjs와 같은 방식(~/.claude/sessions의 pid로 터미널 핸들 복구)을 그 세션 하나에 대해 재실행한다.
+  function recoverHandle(id) {
+    try {
+      for (const ev of seedImpl()) {
+        if (ev.agent !== id || !ev.terminal) continue;
+        terminals.set(id, ev.terminal);
+        if (ev.device) devices.set(id, ev.device);
+        return ev.terminal;
+      }
+    } catch (err) {
+      log(`handle 복구 실패: ${err.message}`);
+    }
+    return undefined;
+  }
+
   // 닫기와 지시가 같이 쓰는 검사. 메인 세션만, 일하지 않을 때만, 터미널 핸들을 알 때만 통과한다.
   // 통과하면 { agent, handle } 를, 막히면 { reason } 을 돌려준다.
   function guardSession(id, doing) {
     const agent = state.agents[id];
-    const handle = terminals.get(id);
     if (!agent) return { reason: '직원을 찾지 못했어요' };
     if (agent.parent) return { reason: `서브에이전트는 ${doing}지 않아요` };
-    if (!handle) return { reason: '터미널 정보가 없어요' };
-    if (['thinking', 'working', 'waiting'].includes(agent.status)) return { reason: `일하는 중이라 ${doing}지 않았어요` };
+    const handle = terminals.get(id) || recoverHandle(id);
+    if (!handle) return { reason: '아직 이 세션과 연결 전이에요. 세션이 한 번 움직이면 연결돼요' };
+    if (['thinking', 'working'].includes(agent.status)) return { reason: `일하는 중이라 ${doing}지 않았어요`, busy: true };
+    if (agent.status === 'waiting') {
+      // 입력 대기(idle)는 쉬는 중과 같다. 권한 확인은 /exit 글자가 대화상자의 답이 될 수 있어 막는다.
+      // 이유를 모르는 waiting은 15분 넘게 이어졌을 때만 입력 대기로 본다.
+      if (agent.waitKind === 'permission') return { reason: `권한 확인을 기다리는 중이라 ${doing}지 않았어요`, busy: true };
+      const old = Date.now() - (agent.statusSince ?? agent.lastSeen ?? Date.now()) > WAIT_UNKNOWN_MS;
+      if (agent.waitKind !== 'idle' && !old) return { reason: `일하는 중이라 ${doing}지 않았어요`, busy: true };
+    }
     return { agent, handle };
   }
 
@@ -156,11 +188,11 @@ export function startServer({
   // 세션이 이 서버와 같은 기기에서 왔으면 바로 닫고, 아니면 그 기기의 close-agent에게 맡긴다.
   async function closeSession(id) {
     const g = guardSession(id, '닫');
-    if (!g.handle) return { closed: false, reason: g.reason };
+    if (!g.handle) return { closed: false, reason: g.reason, ...(g.busy ? { busy: true } : {}) };
     const owner = devices.get(id) || '';
     if (owner !== device) {
       const full = enqueue({ kind: 'close', agent: id, terminal: g.handle, device: owner });
-      return full ? { closed: false, reason: full } : { closed: 'queued' };
+      return full ? { closed: false, reason: full, busy: true } : { closed: 'queued' };
     }
     const result = await closeOrcaTerminal(g.handle, execFileImpl);
     if (result.closed) terminals.delete(id);
@@ -268,6 +300,32 @@ export function startServer({
     return saving;
   }
 
+  // 세션의 터미널과 기기도 파일로 남겨, 서버를 다시 띄워도 쉬는 세션에 지시와 퇴사가 닿게 한다.
+  try {
+    const saved = JSON.parse(readFileSync(routesPath, 'utf8'));
+    for (const [id, h] of Object.entries(saved?.terminals ?? {})) {
+      if (typeof h === 'string' && TERMINAL_HANDLE_RE.test(h)) terminals.set(id.slice(0, 128), h);
+    }
+    for (const [id, d] of Object.entries(saved?.devices ?? {})) {
+      if (typeof d === 'string' && d.length <= 48) devices.set(id.slice(0, 128), d);
+    }
+  } catch {
+    // 파일이 없거나 깨졌으면 빈 채로 시작한다. 세션이 다시 훅을 보내면 채워진다.
+  }
+  let savingRoutes = Promise.resolve();
+  function saveRoutes() {
+    savingRoutes = savingRoutes.then(async () => {
+      try {
+        await mkdir(dirname(routesPath), { recursive: true });
+        const tmp = `${routesPath}.tmp`;
+        await writeFile(tmp, JSON.stringify({ terminals: Object.fromEntries(terminals), devices: Object.fromEntries(devices) }));
+        await rename(tmp, routesPath);
+      } catch {
+        // 저장 실패가 이벤트 처리를 막으면 안 된다.
+      }
+    });
+  }
+
   /** 정규화, 방을 정하고 적용, 방송. 내부에서만 쓴다(rename도 여기로 들어온다). */
   function applyAndBroadcast(raw, tweak) {
     const ev = normalizeEvent(raw);
@@ -282,12 +340,16 @@ export function startServer({
   function ingest(raw) {
     // rename은 관리자 길(POST /rename)로만 만든다. 바깥 이벤트로는 받지 않는다.
     if (raw && raw.type === 'rename') return false;
-    if (raw && typeof raw.agent === 'string' && typeof raw.terminal === 'string' && /^term_[\w-]{8,64}$/.test(raw.terminal)) {
+    let routesChanged = false;
+    if (raw && typeof raw.agent === 'string' && typeof raw.terminal === 'string' && TERMINAL_HANDLE_RE.test(raw.terminal)) {
+      if (terminals.get(raw.agent) !== raw.terminal) routesChanged = true;
       terminals.set(raw.agent, raw.terminal);
     }
     if (raw && typeof raw.agent === 'string' && typeof raw.device === 'string' && raw.device.length <= 48) {
+      if (devices.get(raw.agent) !== raw.device) routesChanged = true;
       devices.set(raw.agent, raw.device);
     }
+    if (routesChanged) saveRoutes();
     return applyAndBroadcast(raw, (ev) => {
       if (!ev.name || !ev.agent || ev.parent || ev.subagent) return;
       if (!DEFAULT_NAMES.has(ev.name)) remember(hookNames, ev.agent, ev.name);
@@ -298,7 +360,7 @@ export function startServer({
 
   if (seed) {
     try {
-      for (const ev of seedEvents()) ingest(ev);
+      for (const ev of seedImpl()) ingest(ev);
     } catch (err) {
       log(`seed failed: ${err.message}`);
     }
@@ -354,7 +416,12 @@ export function startServer({
     try {
       const body = await readFile(file);
       const cache = file.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
-      res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream', 'Cache-Control': cache });
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(file)] || 'application/octet-stream',
+        'Cache-Control': cache,
+        // 검색엔진과 일반 봇 색인 차단. 실제 접근 제한은 구글 로그인(oauth2-proxy)이 한다.
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
+      });
       res.end(body);
     } catch {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });

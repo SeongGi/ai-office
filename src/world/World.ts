@@ -33,11 +33,26 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Agent, Effect, WorldState } from '../../shared/protocol';
 import { Character, findAgentId, PICK_LAYER } from './Character';
 import { Courier } from './Courier';
-import { computeLayout, ELEVATOR, SeatBook, toLocal, type AmenityKind, type BuildingLayout, type RoomLayout } from './layout';
-import { desiredPlace, type Place } from '../../shared/places';
+import { computeLayout, ELEVATOR, SeatBook, toLocal, toWorld, type AmenityKind, type BuildingLayout, type RoomLayout } from './layout';
+import {
+  createToolState,
+  desiredPlace,
+  effectiveStatus,
+  failureTool,
+  initialPlace,
+  initialToolState,
+  isToolFailure,
+  stepToolRoom,
+  thinkingText,
+  TOOL_FAIL_PREFIX,
+  type Place,
+  type ToolState,
+} from '../../shared/places';
+import { TOOL_AISLE, toolSpots } from './toolRooms';
 import { Building } from './Building';
 import { Elevator, ELEVATOR_OPEN_RANGE } from './Elevator';
-import { setNightGlow } from './props';
+import { FarewellChat } from './farewellChat';
+import { setNightGlow, setServerLeds } from './props';
 import { applyThemeToMaterials } from './materials';
 import { prefersReducedMotion } from './motion';
 import { REC } from './quality';
@@ -53,6 +68,8 @@ interface Seated {
   place: Place | 'farewell';
   main: boolean;
   farewell?: boolean;
+  /** `this.elapsed` time to actually start walking to the exit (lets the farewell party gather first). */
+  departAt?: number;
 }
 
 export interface Anchor {
@@ -61,6 +78,8 @@ export interface Anchor {
   y: number;
   depth: number;
   visible: boolean;
+  /** The cat rests in a break room or sits in the meeting room: its tag stays hidden until it is hovered or selected. */
+  resting?: boolean;
 }
 
 export interface WorldCallbacks {
@@ -94,7 +113,14 @@ export class World {
   /** When each agent's status last became idle (performance.now), for the lounge rule. */
   private idleSince = new Map<string, number>();
   private farewells = 0;
+  private chat = new FarewellChat(20261028);
   private placeCheckAt = 0;
+  private toolStates = new Map<string, ToolState>();
+  /** Which spot each cat holds in a tool room (library, server, search), so two cats never stand on one spot. */
+  private toolSlots = { library: new Map<string, number>(), server: new Map<string, number>(), search: new Map<string, number>() };
+  private serverBusy = false;
+  /** More than 12 cats on screen and far away: thinking clouds would only clutter. Checked once a second. */
+  private crowded = false;
   private plan: BuildingLayout | null = null;
   private building = new Building();
   private elevator = new Elevator(ELEVATOR.x, ELEVATOR.z);
@@ -316,11 +342,12 @@ export class World {
         else character.arrive(room.entry, seat);
         s = { character, desk, team: agent.team, leaving: false, place: 'desk', main: !agent.parent };
         this.agents.set(agent.id, s);
+        if (instant && !this.reduced) this.placeNow(s, agent, state);
       } else {
         s.desk.setSeat(seat);
         s.character.setSeat(seat);
       }
-      s.character.setStatus(agent.status);
+      this.applyStatus(s, agent);
       if (agent.status !== 'idle') this.idleSince.delete(agent.id);
       else if (!this.idleSince.has(agent.id)) this.idleSince.set(agent.id, performance.now());
       if (agent.status === 'offline' && !s.leaving) this.depart(agent.id);
@@ -352,14 +379,19 @@ export class World {
   private updatePlaces() {
     if (!this.state || !this.plan || this.reduced) return;
     const now = performance.now();
+    const wall = Date.now();
     for (const [id, s] of this.agents) {
       const agent = this.state.agents[id];
       if (!agent || s.leaving || s.character.mode === 'leaving' || s.character.mode === 'gone') continue;
       if (s.character.mode === 'walking' && !s.character.isAway()) continue; // still arriving or returning
       const farewell = this.farewells > 0;
-      const want = farewell ? 'farewell' : desiredPlace(agent, this.state.agents, this.idleSince.get(id) ?? null, now, this.state.meeting);
+      let ts = this.toolStates.get(id);
+      if (!ts) this.toolStates.set(id, (ts = createToolState()));
+      const room = stepToolRoom(ts, agent, wall);
+      const want = farewell ? 'farewell' : desiredPlace(agent, this.state.agents, this.idleSince.get(id) ?? null, now, this.state.meeting, room);
       if (want === s.place) continue;
       if (want === 'farewell') {
+        this.freeToolSlot(id);
         const trip = this.farewellSpot(s.team, id);
         if (!trip) continue;
         s.character.goTo(trip.route, trip.yaw);
@@ -367,14 +399,85 @@ export class World {
         continue;
       }
       if (want === 'desk') {
+        this.freeToolSlot(id);
         s.character.returnToSeat();
         s.place = 'desk';
         continue;
       }
+      this.freeToolSlot(id);
       const trip = this.tripTo(s.team, want, id);
       if (!trip) continue;
       s.character.goTo(trip.route, trip.yaw);
+      s.character.workPose = trip.work;
       s.place = want;
+    }
+  }
+
+  /** First sight of a cat on load: if its last tool event is fresh it already stands in its tool room, with no walk. */
+  private placeNow(s: Seated, agent: Agent, state: WorldState) {
+    const now = Date.now();
+    const st = initialToolState(agent, now);
+    this.toolStates.set(agent.id, st);
+    const want = initialPlace(agent, state.agents, now, state.meeting);
+    if (want !== 'library' && want !== 'server' && want !== 'search') return;
+    const trip = this.tripTo(s.team, want, agent.id);
+    if (!trip) return;
+    s.character.placeAt(trip.route, trip.yaw);
+    s.character.workPose = trip.work;
+    s.place = want;
+  }
+
+  private freeToolSlot(id: string) {
+    this.toolSlots.library.delete(id);
+    this.toolSlots.server.delete(id);
+    this.toolSlots.search.delete(id);
+  }
+
+  /** The status to draw (a tool failure turns back into thinking after a few seconds), plus the speech bubble. */
+  private applyStatus(s: Seated, agent: Agent) {
+    const status = effectiveStatus(agent, Date.now());
+    s.character.setStatus(status);
+    if (status === 'error' && isToolFailure(agent)) s.character.setBubble(2, TOOL_FAIL_PREFIX, failureTool(agent), true);
+    else if (status === 'thinking') {
+      // After a failure the old activity is the failure text; say nothing about it again.
+      const text = thinkingText(isToolFailure({ ...agent, status: 'error' }) ? '' : agent.activity);
+      s.character.setBubble(1, text, '', !this.reduced && !this.crowded);
+    } else if (this.reduced && s.character.celebrating()) s.character.setBubble(1, '✓', '', true);
+    else s.character.setBubble(0, '', '', false);
+  }
+
+  /** Once a second: expire failure statuses, show or hide bubbles when the scene is crowded, light the server racks. */
+  private refreshStatuses() {
+    if (!this.state) return;
+    let shown = 0;
+    if (this.camera.position.distanceTo(this.controls.target) > 30)
+      for (const s of this.agents.values()) if (!s.leaving && s.character.root.visible && this.frustum.containsPoint(s.character.root.getWorldPosition(this.tmpV))) shown++;
+    this.crowded = shown > 12;
+    let busy = false;
+    const inRoom = { library: 0, server: 0, search: 0 };
+    for (const [id, s] of this.agents) {
+      const agent = this.state.agents[id];
+      if (agent && !s.leaving) this.applyStatus(s, agent);
+      if (s.place === 'server' && s.character.mode === 'standing') busy = true;
+      if ((s.place === 'library' || s.place === 'server' || s.place === 'search') && s.character.mode === 'standing' && !s.leaving) inRoom[s.place] += 1;
+    }
+    this.serverBusy = busy;
+    this.building.setToolCounts(inRoom);
+  }
+
+  /** Cats gathered for a leaver take turns talking in the thinking-cloud bubble; the leaver says one goodbye near the elevator. */
+  private updateFarewellTalk() {
+    const ids: string[] = [];
+    for (const [id, s] of this.agents) if (s.place === 'farewell' && s.character.mode === 'standing' && !s.leaving) ids.push(id);
+    ids.sort();
+    this.chat.update(this.elapsed, this.farewells > 0, ids);
+    if (this.farewells <= 0) return;
+    for (const [id, s] of this.agents) {
+      if (s.farewell && s.character.mode === 'leaving' && s.character.root.getWorldPosition(this.tmpV).distanceTo(this.elevator.front) < 4.5) this.chat.sayBye(id, this.elapsed);
+      if (s.place !== 'farewell' && !s.farewell) continue;
+      const str = this.chat.textFor(id);
+      if (str) s.character.setBubble(1, str, '', true);
+      else if (s.place === 'farewell' || s.farewell) s.character.setBubble(0, '', '', false);
     }
   }
 
@@ -395,11 +498,28 @@ export class World {
   }
 
   /** Room-local route from the corridor outside an office door to a spot inside an amenity. */
-  private tripTo(team: string, kind: AmenityKind, agentId: string) {
+  private tripTo(team: string, kind: AmenityKind, agentId: string): { route: [number, number][]; yaw: number; work: 0 | 1 | 2 | 3 } | null {
     const room = this.layout.get(team);
     const amenity = this.plan?.amenities.find((a) => a.kind === kind);
     if (!room || !amenity) return null;
     const r = amenity.rect;
+    if (kind === 'library' || kind === 'server' || kind === 'search') {
+      // Tool rooms: through the door, along the aisle, down a free lane to a spot. A full room means the cat stays at its desk.
+      const spots = toolSpots(kind, r.w);
+      const map = this.toolSlots[kind];
+      const used = new Set(map.values());
+      let n = 0;
+      while (used.has(n)) n++;
+      if (n >= spots.length) return null;
+      map.set(agentId, n);
+      const spot = spots[n];
+      const frame = { x: r.x, z: r.z, yaw: amenity.side === 'north' ? 0 : Math.PI };
+      const at = (x: number, z: number) => toLocal(room, toWorld(frame, [x, z]));
+      const front = r.d / 2 - 0.7;
+      const door = room.entry[room.entry.length - 1];
+      const route: [number, number][] = [door, toLocal(room, [r.x, 0]), at(0, front), at(0, TOOL_AISLE), at(spot.via, TOOL_AISLE), at(spot.via, spot.z), at(spot.x, spot.z)];
+      return { route, yaw: frame.yaw - room.yaw, work: spot.work };
+    }
     let h = 0;
     for (let i = 0; i < agentId.length; i++) h = (h * 31 + agentId.charCodeAt(i)) >>> 0;
     const slot = h % 9;
@@ -409,7 +529,7 @@ export class World {
     const oz = Math.max(-maxZ, Math.min(maxZ, (Math.floor(slot / 3) - 1) * 1.1));
     const corridorDoor = room.entry[room.entry.length - 1];
     const route: [number, number][] = [corridorDoor, toLocal(room, [r.x, 0]), toLocal(room, [r.x + ox, r.z + oz])];
-    return { route, yaw: -room.yaw };
+    return { route, yaw: -room.yaw, work: 0 };
   }
 
   /** Redraw door signs and whiteboards (cheap: each room skips when nothing changed). */
@@ -430,15 +550,26 @@ export class World {
     const s = this.agents.get(id);
     if (!s || s.leaving) return;
     s.leaving = true;
-    if (s.main && !this.reduced) {
+    if (this.reduced) return this.dropAgent(id);
+    if (s.main) {
+      // Hold the leaver at their desk a moment so the farewell party has time to gather and start
+      // talking before anyone walks off — otherwise the leaver reaches the exit alone and unseen.
       s.farewell = true;
       this.farewells++;
+      this.chat.setLeaver(this.state?.agents[id]?.name ?? '');
       this.updatePlaces();
+      s.departAt = this.elapsed + FAREWELL_DEPART_DELAY;
+      return;
     }
+    this.startLeaveWalk(id);
+  }
+
+  /** Walk back out the way they came: through the office door, down the corridor, out the front. */
+  private startLeaveWalk(id: string) {
+    const s = this.agents.get(id);
+    if (!s) return;
     const room = this.layout.get(s.team);
-    // Walk back out the way they came: through the office door, down the corridor, out the front.
     const exit: [number, number][] = room ? room.exit : [[0, 6]];
-    if (this.reduced) return this.dropAgent(id);
     s.character.leave(exit, () => this.dropAgent(id));
   }
 
@@ -454,6 +585,8 @@ export class World {
     s.desk.dispose();
     this.agents.delete(id);
     this.idleSince.delete(id);
+    this.toolStates.delete(id);
+    this.freeToolSlot(id);
     if (this.selected === id) this.cb.onPick(null, null);
     // Remove empty rooms once everyone has walked out.
     const team = s.team;
@@ -472,6 +605,7 @@ export class World {
     this.instantNext = true;
     this.hasFramed = false;
     this.autoFrame = true;
+    this.toolStates.clear();
   }
 
   handleEffect(effect: Effect) {
@@ -753,20 +887,26 @@ export class World {
 
     if (this.elapsed >= this.placeCheckAt) {
       this.placeCheckAt = this.elapsed + 1;
+      this.refreshStatuses();
       this.updatePlaces();
     }
     this.screenBudget = 10;
     this.frustum.setFromProjectionMatrix(this.projView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     for (const [id, s] of this.agents) {
+      if (s.departAt !== undefined && this.elapsed >= s.departAt) {
+        s.departAt = undefined;
+        this.startLeaveWalk(id);
+      }
       s.character.update(dt, this.elapsed, this.reduced);
       const agent = this.state?.agents[id];
       if (agent) {
         // Monitors are canvas textures: only redraw the ones you can actually read.
         const near = this.screenBudget > 0 && this.isNear(s.character.root);
         if (near) this.screenBudget--;
-        s.desk.update(dt, this.elapsed, agent, dark, s.character.isSeated(), s.character.root.rotation.y, near);
+        s.desk.update(dt, this.elapsed, agent, dark, s.character.isSeated(), s.character.root.rotation.y, near, this.reduced || this.crowded);
       }
     }
+    this.updateFarewellTalk();
     let elevatorNear = false;
     for (const s of this.agents.values()) {
       if (!s.leaving && s.character.mode !== 'walking') continue;
@@ -774,6 +914,7 @@ export class World {
     }
     this.elevator.update(dt, elevatorNear);
     this.building.tick(dt, this.camera);
+    setServerLeds(this.serverBusy, this.reduced ? 0 : this.elapsed);
     this.courier.update(dt);
     this.updateCamera(dt);
     this.frameNo++;
@@ -847,6 +988,10 @@ export class World {
 
 /** Seconds a camera flight takes to (almost) arrive. */
 const FLIGHT_RESPONSE = 1.1;
+
+/** Seconds a leaving cat waits at their desk before walking out, so the farewell party (FarewellChat's
+ *  own FIRST_DELAY) has time to gather and start talking before the leaver is gone. */
+const FAREWELL_DEPART_DELAY = 2.4;
 
 /** One critically damped spring step per axis (Apple's response/damping model, damping = 1). */
 function springStep(x: Vector3, v: Vector3, goal: Vector3, response: number, dt: number) {

@@ -1,4 +1,4 @@
-import { BoxGeometry, DoubleSide, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, type BufferGeometry } from 'three';
+import { BoxGeometry, Color, DoubleSide, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, type BufferGeometry } from 'three';
 import { Kit } from './kit';
 import { clay, G, themedMat } from './materials';
 import { clockMaterial, posterMaterial } from './textures';
@@ -397,6 +397,56 @@ export function serverRack(k: Kit, x: number, z: number, ry: number) {
     for (let l = 0; l < 4; l++) if (rand() > 0.35) k.add(G.box(0.02, 0.02, 0.01), leds[(u + l) % 3 === 2 && rand() > 0.6 ? 2 : (u + l) % 2], 0.18 + l * 0.03, y, 0.412, { cast: false });
   }
   k.pop();
+}
+
+/** Rack lights of the server room. Three groups blink out of step; red while a cat works there, green otherwise. */
+const rackLeds = [0, 1, 2].map(() => new MeshBasicMaterial({ color: '#4ade80', toneMapped: false }));
+const GREEN = new Color('#4ade80');
+const RED = new Color('#ff3b30');
+export function setServerLeds(busy: boolean, t: number) {
+  for (let i = 0; i < rackLeds.length; i++) {
+    const on = Math.sin(t * (busy ? 9 : 3) + i * 2.1) > -0.3;
+    rackLeds[i].color.copy(busy ? RED : GREEN).multiplyScalar(on ? 1.6 : 0.18);
+  }
+}
+
+/** A server rack whose lights use the shared blinking materials (see setServerLeds). */
+export function serverRackLive(k: Kit, x: number, z: number, ry: number) {
+  k.push(x, 0, z, ry);
+  k.add(G.rbox(0.62, 2.0, 0.8, 0.02), M.black(), 0, 1.0, 0);
+  for (let u = 0; u < 12; u++) {
+    const y = 0.25 + u * 0.14;
+    k.add(G.box(0.54, 0.11, 0.01), M.charcoal(), 0, y, 0.405);
+    for (let l = 0; l < 4; l++) k.add(G.box(0.025, 0.025, 0.01), rackLeds[(u + l) % 3], 0.18 + l * 0.035, y, 0.412, { cast: false });
+  }
+  k.pop();
+}
+
+/** A desk with monitors facing +Z; each screen colour is an emissive clay so it reads at night too. */
+export function consoleDesk(k: Kit, x: number, z: number, ry: number, w: number, screens: string[]) {
+  k.push(x, 0, z, ry);
+  k.add(G.rbox(w, 0.05, 0.75, 0.025), M.steel(), 0, 0.74, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) k.add(G.box(0.05, 0.72, 0.05), M.charcoal(), sx * (w / 2 - 0.1), 0.36, sz * 0.3);
+  const n = screens.length;
+  for (let i = 0; i < n; i++) {
+    const mx = (i - (n - 1) / 2) * (w / n);
+    k.add(G.rbox(0.62, 0.38, 0.04, 0.01), M.black(), mx, 1.08, -0.18);
+    k.add(G.box(0.56, 0.32, 0.01), clay(screens[i], { emissive: screens[i], emissiveIntensity: 0.55 }), mx, 1.08, -0.155, { cast: false });
+    k.add(G.box(0.05, 0.14, 0.05), M.charcoal(), mx, 0.84, -0.18);
+  }
+  k.add(G.rbox(0.42, 0.015, 0.14, 0.005), M.offWhite(), 0, 0.775, 0.2);
+  k.pop();
+}
+
+/** A globe on a wooden stand. */
+export function globe(k: Kit, x: number, z: number) {
+  k.add(G.cyl(0.2, 0.24, 0.05, 16), M.woodDark(), x, 0.025, z);
+  k.add(G.cyl(0.03, 0.03, 0.75, 8), M.woodDark(), x, 0.4, z);
+  k.add(G.sphere(0.4, 20, 16), clay('#6fb4e6'), x, 1.02, z);
+  for (const [dx, dy, dz, sc] of [[-0.18, 0.12, -0.3, 1], [0.2, -0.1, -0.26, 0.8], [0.0, 0.25, 0.34, 0.9]] as const) {
+    k.add(G.sphere(0.12 * sc, 8, 6), clay('#6fbf7a'), x + dx, 1.02 + dy, z + dz, { sx: 1.2, sy: 0.8, sz: 0.5 });
+  }
+  k.add(G.cyl(0.42, 0.42, 0.015, 24), M.steel(), x, 1.02, z, { rz: Math.PI / 2 + 0.4, rx: 0.2, cast: false });
 }
 
 export function vendingMachine(k: Kit, x: number, z: number, ry: number) {

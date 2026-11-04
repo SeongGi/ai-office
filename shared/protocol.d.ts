@@ -1,4 +1,5 @@
 export type Status = 'idle' | 'thinking' | 'working' | 'waiting' | 'done' | 'error' | 'offline';
+export type WaitKind = 'idle' | 'permission';
 export type EventType = 'join' | 'status' | 'tool' | 'message' | 'task' | 'leave' | 'reset' | 'meeting' | 'rename';
 
 /** What clients POST to /events. Only `type` and `agent` are required. */
@@ -22,6 +23,7 @@ export interface InboundEvent {
   lastPrompt?: string;
   lastReply?: string;
   permission?: string;
+  waitKind?: WaitKind;
   subagent?: { key?: string; type?: string };
   meeting?: 'start' | 'end';
   all?: boolean;
@@ -50,6 +52,7 @@ export interface FloorEvent {
   lastPrompt?: string;
   lastReply?: string;
   permission?: string;
+  waitKind?: WaitKind;
   meeting?: 'start' | 'end';
   all?: boolean;
 }
@@ -80,12 +83,18 @@ export interface Agent {
   lastSeen: number;
   /** 지금 상태가 된 때(서버 시각). 옛 저장본에는 없다. */
   statusSince?: number;
+  /** 마지막으로 쓴 도구 이름, 그 호출이 시작된 때와 끝난 때(서버 시각). 도구 방 판단에 쓴다. */
+  lastTool?: string;
+  toolAt?: number;
+  toolEndAt?: number;
   history: HistoryEntry[];
   boundKey?: string;
   /** 메인 세션만: 마지막으로 물어본 것, 마지막 답, 권한 모드(bypassPermissions 등). */
   lastPrompt?: string;
   lastReply?: string;
   permission?: string;
+  /** waiting일 때만: idle(입력 대기), permission(권한 확인). 모르면 없다. */
+  waitKind?: WaitKind;
 }
 
 export interface Team {
@@ -117,6 +126,7 @@ export type Effect =
 
 export const PROTOCOL_VERSION: number;
 export const STATUSES: Status[];
+export const WAIT_KINDS: WaitKind[];
 export const MEETING_MS: number;
 export const EVENT_TYPES: EventType[];
 export function createState(): WorldState;

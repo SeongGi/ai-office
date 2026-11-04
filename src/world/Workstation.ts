@@ -204,7 +204,7 @@ export class Workstation {
     }
   }
 
-  update(dt: number, t: number, agent: Agent, dark: boolean, charSeated: boolean, charYaw: number, near = true) {
+  update(dt: number, t: number, agent: Agent, dark: boolean, charSeated: boolean, charYaw: number, near = true, still = false) {
     if (this.target) {
       this.root.position.x = damp(this.root.position.x, this.target.x, 6, dt);
       this.root.position.z = damp(this.root.position.z, this.target.z, 6, dt);
@@ -214,7 +214,7 @@ export class Workstation {
       this.chair.rotation.y = dampAngle(this.chair.rotation.y, swivel, 8, dt);
       this.chair.position.z = damp(this.chair.position.z, charSeated ? 0 : 0.35, 4, dt);
     }
-    if (near) this.screen.update(agent, t, dark);
+    if (near) this.screen.update(agent, t, dark, still);
   }
 
   dispose() {

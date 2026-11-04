@@ -138,7 +138,7 @@ test('send: 가드(일하는 중, 서브에이전트, 터미널 없음, 권한 �
     assert.match((await (await send(base, 'busy', 'hi')).json()).reason, /일하는 중/);
     assert.match((await (await send(base, 'wait', 'hi')).json()).reason, /일하는 중/);
     assert.match((await (await send(base, 'child', 'hi')).json()).reason, /서브에이전트/);
-    assert.match((await (await send(base, 'noterm', 'hi')).json()).reason, /터미널 정보/);
+    assert.match((await (await send(base, 'noterm', 'hi')).json()).reason, /연결 전이에요/);
     assert.match((await (await send(base, 'ghost', 'hi')).json()).reason, /찾지 못했어요/);
     const blocked = await (await send(base, 'bypass', 'hi')).json();
     assert.deepEqual(blocked, { sent: false, reason: '권한 확인 없이 도는 세션이라 막았어요' });
@@ -473,5 +473,75 @@ test('rename: /events로 들어온 rename은 메인 포트와 기계용 포트 �
     assert.equal(floor.ingest({ type: 'rename', agent: AG, name: '위조' }), false);
     assert.equal(floor.state.agents[AG].name, '결제 버그');
     assert.equal((await postJson(m, '/rename', { agent: AG, name: 'x' }, auth)).status, 404, '기계용 포트에는 길이 없다');
+  });
+});
+
+test('guard: waiting은 이유로 가른다(idle 허용, permission 거절, 모르면 15분 뒤 허용)', async () => {
+  const orca = fakeOrca([{ handle: TERM, agentIdentity: 'claude' }]);
+  const admin = { admins: ME, trustProxyEmail: true, device: '서버기기', execFileImpl: orca };
+  const close = async (base, agent) => (await postJson(base, '/close', { agent }, asMe)).json();
+  const old = Date.now() - 20 * 60_000;
+  await withServer(admin, async (base) => {
+    await joinAgent(base, 'idleWait', { status: 'waiting', waitKind: 'idle' });
+    await joinAgent(base, 'permWait', { status: 'waiting', waitKind: 'permission' });
+    await joinAgent(base, 'permOld', { status: 'waiting', waitKind: 'permission', ts: old });
+    await joinAgent(base, 'newUnknown', { status: 'waiting' });
+    await joinAgent(base, 'oldUnknown', { status: 'waiting', ts: old });
+    await joinAgent(base, 'busy', { status: 'thinking' });
+    assert.deepEqual(await close(base, 'idleWait'), { closed: 'queued' });
+    assert.equal((await close(base, 'permWait')).reason, '권한 확인을 기다리는 중이라 닫지 않았어요');
+    assert.match((await close(base, 'permOld')).reason, /권한 확인/, '권한 확인은 오래돼도 막는다');
+    assert.match((await close(base, 'newUnknown')).reason, /일하는 중/);
+    assert.deepEqual(await close(base, 'oldUnknown'), { closed: 'queued' });
+    assert.match((await close(base, 'busy')).reason, /일하는 중/);
+    // 지시 보내기도 같은 검사를 쓴다. 권한 우회 세션 규칙은 그대로다.
+    const send = async (agent) => (await postJson(base, '/send', { agent, text: 'hi' }, asMe)).json();
+    assert.deepEqual(await send('idleWait'), { sent: 'queued' });
+    assert.match((await send('permWait')).reason, /권한 확인/);
+    await joinAgent(base, 'bypassIdle', { status: 'waiting', waitKind: 'idle', permission: 'bypassPermissions' });
+    assert.match((await send('bypassIdle')).reason, /권한 확인 없이/);
+  });
+});
+
+test('waitKind: 알림 훅이 알리고 waiting을 벗어나면 지워진다', () => {
+  const hook = (extra) => fromClaude({ hook_event_name: 'Notification', session_id: 'sess1234', cwd: '/x/shop', ...extra })[0];
+  assert.equal(hook({ notification_type: 'idle_prompt' }).waitKind, 'idle');
+  assert.equal(hook({ notification_type: 'permission_prompt' }).waitKind, 'permission');
+  assert.equal(hook({ notification_type: 'elicitation_dialog' }).waitKind, 'permission');
+  assert.equal(hook({ type: 'idle_prompt' }).waitKind, 'idle', 'type 필드도 본다');
+  assert.equal('waitKind' in hook({ notification_type: 'auth_success' }), false);
+  assert.equal('waitKind' in hook({}), false);
+  const state = createState();
+  const send = (ev) => applyEvent(state, normalizeEvent({ agent: 'a', team: 't', ...ev }));
+  send({ type: 'status', status: 'waiting', waitKind: 'idle' });
+  assert.equal(state.agents.a.waitKind, 'idle');
+  send({ type: 'status', status: 'waiting', waitKind: 'bogus' });
+  assert.equal(state.agents.a.waitKind, undefined, '새 알림이 이유를 모르면 비운다');
+  send({ type: 'status', status: 'waiting', waitKind: 'permission' });
+  send({ type: 'status', status: 'thinking' });
+  assert.equal(state.agents.a.waitKind, undefined);
+});
+
+test('routes: 터미널과 기기 연결은 파일에 남아 서버를 다시 띄워도 쉬는 세션에 닿는다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-routes-'));
+  const routesPath = join(dir, 'routes.json');
+  const orca = fakeOrca([{ handle: TERM, agentIdentity: 'claude' }]);
+  const opts = { ...ADMIN, device: '서버기기', routesPath, execFileImpl: orca };
+  await withServer(opts, async (base) => {
+    await joinAgent(base, 'lap', { device: '서버기기' });
+    for (let i = 0; i < 50 && !(await readFile(routesPath).catch(() => null)); i++) await new Promise((r) => setTimeout(r, 20));
+  });
+  assert.deepEqual(JSON.parse(await readFile(routesPath, 'utf8')), { terminals: { lap: TERM }, devices: { lap: '서버기기' } });
+  // 다시 뜬 서버는 세션이 훅 없이 seed로만 올라와도 터미널을 안다.
+  await withServer(opts, async (base) => {
+    await joinAgent(base, 'lap', { terminal: undefined, device: undefined });
+    const res = await postJson(base, '/send', { agent: 'lap', text: 'hi' }, asMe);
+    assert.deepEqual(await res.json(), { sent: true });
+  });
+  // 깨진 파일은 빈 채로 시작한다.
+  await writeFile(routesPath, '{깨진');
+  await withServer(opts, async (base) => {
+    await joinAgent(base, 'lap', { terminal: undefined, device: undefined });
+    assert.match((await (await postJson(base, '/send', { agent: 'lap', text: 'hi' }, asMe)).json()).reason, /연결 전이에요/);
   });
 });

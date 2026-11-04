@@ -1,5 +1,6 @@
 // One agent: where the cat is, what it is doing, and how it moves. Mirrors src/world/Character.ts.
 import type { Agent, Status } from '../../shared/protocol';
+import { CELEBRATE_MS, createCelebrateState, shouldCelebrate } from '../../shared/places';
 import { CORRIDOR } from '../world/layout';
 import { damp } from '../world/motion';
 import type { CatAct, CatView } from './cat';
@@ -26,6 +27,7 @@ export type Mode = 'walking' | 'seated' | 'standing' | 'leaving' | 'gone';
 
 const WALK_SPEED = 2.0;
 const HALL = CORRIDOR / 2 - 0.1;
+export const PARTY_S = CELEBRATE_MS / 1000;
 
 /** In the corridor, where nothing stands between two points. */
 const inHall = (p: P) => Math.abs(p.z) <= HALL;
@@ -45,9 +47,11 @@ export class Agent2D implements CatView {
   x = 0;
   z = 0;
   seat: SeatW | null = null;
-  place: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'farewell' = 'desk';
+  place: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'booths' | 'library' | 'server' | 'search' | 'farewell' = 'desk';
+  /** What desiredPlace last asked for. A resting cat may sit in another break room when its own is full, so this can differ from `place`. */
+  wanted: 'desk' | 'meeting' | 'lounge' | 'games' | 'kitchen' | 'library' | 'server' | 'search' | 'farewell' = 'desk';
   /** What the cat holds and does while it hangs out (mug, paddle, stretch). Driven by activities.ts. */
-  readonly act: CatAct = { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0 };
+  readonly act: CatAct = { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0, work: 0 };
   /** Bumped whenever the cat is sent somewhere new, so a side trip knows it was overruled. */
   routeId = 0;
   main = true;
@@ -66,7 +70,20 @@ export class Agent2D implements CatView {
   hover = 0;
   selected = 0;
   badge = 0;
+  /** Speech bubble over the head: what it shows, how visible it is (0..1) and the text. Driven by World2D. */
+  bubbleKind: 0 | 1 | 2 = 0; // 0 none, 1 thinking cloud, 2 tool failure
+  bubble = 0;
+  bubbleText = '';
+  bubbleSub = '';
+  bubbleWant = 0;
+  /** The pose the cat takes at its spot in a tool room (CatAct.work), set when it is sent there. */
+  workPose: 0 | 1 | 2 | 3 = 0;
+  /** Which failure event the red bubble was started for (the agent's lastSeen). */
+  failKey = -1;
   talk = 0;
+  /** Seconds left of the task done celebration (PARTY_S at the start, 0 = none) and the raised arms it asks for (0..1). */
+  party = 0;
+  partyArms = 0;
   alpha = 1;
   atDesk = true;
   readonly fur: string;
@@ -88,6 +105,7 @@ export class Agent2D implements CatView {
   private awaySit = false;
   private awayLook = 0;
   private hopV = 0;
+  private partyRate = createCelebrateState();
   private wantSelected = false;
   private wantHover = false;
   private onGone: (() => void) | null = null;
@@ -343,6 +361,7 @@ export class Agent2D implements CatView {
     this.status = status;
     if (status === 'done' && prev !== 'done') this.hopV = 3.3;
     if (status === 'error' && prev !== 'error') this.shake = 1;
+    if (shouldCelebrate(this.partyRate, prev, status, performance.now())) this.party = PARTY_S;
   }
 
   setSelected(on: boolean) {
@@ -419,10 +438,24 @@ export class Agent2D implements CatView {
         this.hopV = 0;
       }
     }
+    if (this.party > 0) {
+      const was = this.party;
+      this.party = Math.max(0, was - dt);
+      // Reduced motion: no hops and no raised arms, World2D shows a small check bubble instead.
+      if (reduced) this.partyArms = 0;
+      else {
+        if (was === PARTY_S || (was > 0.8 && this.party <= 0.8)) this.kick(3.1);
+        this.partyArms = Math.min(1, (PARTY_S - this.party) / 0.15, this.party / 0.3);
+      }
+      if (this.party === 0) this.act.cheer = 0;
+    }
     this.shake = Math.max(0, this.shake - dt * 1.1);
     this.talk = Math.max(0, this.talk - dt);
     const wantBadge = this.status === 'thinking' || this.status === 'waiting' || this.status === 'done' || this.status === 'error' ? 1 : 0;
     this.badge = damp(this.badge, wantBadge, reduced ? 30 : 12, dt);
+    this.act.work = this.mode === 'standing' && this.workPose && (this.place === 'library' || this.place === 'server' || this.place === 'search') ? this.workPose : 0;
+    this.bubble = damp(this.bubble, this.bubbleWant, reduced ? 30 : 6, dt);
+    if (this.bubble < 0.01 && this.bubbleWant === 0) this.bubbleKind = 0;
     this.selected = damp(this.selected, this.wantSelected ? 1 : 0, 12, dt);
     this.hover = damp(this.hover, this.wantHover ? 1 : 0, 14, dt);
     this.alpha = damp(this.alpha, this.status === 'offline' ? 0.55 : 1, 6, dt);

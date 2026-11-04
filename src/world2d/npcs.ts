@@ -1,11 +1,12 @@
 // Decor cats that are not agents: the info cat at the lobby reception and the interview corner in the kitchen.
 // They are not in WorldState, cannot be picked and cost the server nothing. Every move is a pure function of
 // the clock, so nothing here allocates per frame. With reduced motion they hold one static pose and stay quiet.
+import { NPC_SCRIPTS, type NpcPlace, type NpcTag } from '../../shared/npcScripts.js';
 import { LOBBY_WIDTH, toWorld, type BuildingLayout } from '../world/layout';
 import { drawCat, HEAD_TOP, type CatAct, type CatView } from './cat';
 import { rgba } from './color';
 import { rbox, star, style, text, textWidth } from './draw';
-import { INTERVIEW, INTERVIEW_MIN_W, reception } from './furniture';
+import { INTERVIEW, INTERVIEW_MIN_W, NEWHIRES, NEWHIRE_MIN_W, reception } from './furniture';
 import { EYE_IRIS, catFurFor, hash, shirtFor } from './palette2d';
 
 type Ctx = CanvasRenderingContext2D;
@@ -15,7 +16,7 @@ export function receptionSpot(x0: number, z0: number) {
   return { x: x0 + LOBBY_WIDTH / 2 - 1.3, z: z0 + 3.6, w: 3.2 };
 }
 
-type Role = 'info' | 'boss' | 'guest' | 'wait';
+type Role = 'info' | 'boss' | 'guest' | 'hire';
 
 interface Npc extends CatView {
   role: Role;
@@ -28,27 +29,60 @@ interface Npc extends CatView {
   sayW: number;
   sayOf: string;
   act: CatAct;
+  /** Which way the cat faces: -1 left, 1 right. */
+  face: number;
+  /** World x the cat's bubble must stay inside. */
+  bmin: number;
+  bmax: number;
 }
 
-const INFO_LINES = ['어서 오세요,\n성기 주식회사예요', '오늘도 다들\n열일 중이에요', '회의는\n저쪽이에요', '엘리베이터는\n이쪽이에요'];
-const BUBBLE_LIFE = 3.6;
-const WAVE_LIFE = 1.8;
-
-/** One interview round: who speaks (0 interviewer, 1 candidate), when, what, and for how long. The last one is the verdict. */
-const CYCLE = 34;
-const TALK: { who: 0 | 1; at: number; text: string; dur: number }[] = [
-  { who: 0, at: 1, text: '자기소개\n부탁드려요', dur: 3.4 },
-  { who: 1, at: 6, text: '고양이 사료\n경력 3년입니다', dur: 3.6 },
-  { who: 0, at: 12, text: '우리 회사를\n고른 이유는요?', dur: 3.4 },
-  { who: 1, at: 17, text: '밥이\n맛있어서요', dur: 3.2 },
-];
-const VERDICT_AT = 23;
-const VERDICT_FOR = 3.4;
-const PASS = '합격이에요!';
-const LATER = '연락\n드릴게요';
-const THANKS = '감사합니다!';
-
 const FAR = 1e9;
+const WAVE_LIFE = 1.8;
+/** The one line shown when motion is reduced. */
+const STILL_LINE = '어서 오세요!';
+
+/** One line of a scenario with its bubble text already wrapped, built once at load. */
+interface Line {
+  slot: 0 | 1;
+  text: string;
+  tag: NpcTag | '';
+}
+const PLACES = ['info', 'interview', 'lounge', 'banter'] as const;
+const SCN: Record<NpcPlace, Line[][]> = { info: [], interview: [], lounge: [], banter: [] };
+for (const place of PLACES) {
+  for (const sc of NPC_SCRIPTS[place]) {
+    SCN[place].push(
+      sc.map(([slot, str, tag]) => {
+        // A long line breaks at the space nearest the middle so the bubble stays small.
+        let text = str;
+        if (str.length > 9) {
+          let at = -1;
+          for (let i = 0; i < str.length; i++) if (str[i] === ' ' && (at < 0 || Math.abs(i - str.length / 2) < Math.abs(at - str.length / 2))) at = i;
+          if (at > 0) text = `${str.slice(0, at)}\n${str.slice(at + 1)}`;
+        }
+        return { slot, text, tag: tag ?? '' };
+      }),
+    );
+  }
+}
+const HISTORY = 5;
+
+/** A group of cats that act out scenarios one after another. */
+interface Group {
+  place: NpcPlace;
+  a: Npc;
+  b: Npc;
+  /** Seconds when the next scenario starts. */
+  next: number;
+  sc: Line[] | null;
+  li: number;
+  lineAt: number;
+  lineEnd: number;
+  /** Scenarios played so far; it is also the RNG counter. */
+  n: number;
+  /** The last few scenario keys, so they are not picked again at once. */
+  hist: Int16Array;
+}
 
 /** A repeatable number in [0, 1) from two integers. */
 function rnd(a: number, b: number) {
@@ -86,52 +120,80 @@ function make(id: string, role: Role): Npc {
     seed: (h % 1000) / 1000,
     alpha: 1,
     atDesk: false,
-    act: { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0 },
+    act: { prop: 0, side: 1, sip: 0, swing: 0, stretch: 0, cheer: 0, work: 0 },
     say: '',
     sayAt: 0,
     sayFor: 0,
     sayW: 0,
     sayOf: '',
+    face: 0,
+    bmin: -FAR,
+    bmax: FAR,
   };
 }
 
 export class Npcs {
-  /** info cat, interviewer, candidate in the chair, then the one waiting. */
-  private cats = [make('npc-안내', 'info'), make('npc-면접관', 'boss'), make('npc-지원자-1', 'guest'), make('npc-지원자-2', 'wait')];
+  /** info cat, interviewer, candidate, then the two new hires who wait in the lounge. */
+  private cats = [make('npc-안내', 'info'), make('npc-면접관', 'boss'), make('npc-지원자-1', 'guest'), make('npc-신입-1', 'hire'), make('npc-신입-2', 'hire')];
   private key = '';
   private desk = { x: 0, z: 0, w: 0 };
-  private infoNext = 6;
-  private infoN = 0;
-  /** Seconds into the pass celebration, or -1. */
+  private groups: Group[] = [];
+  /** Seconds into a cheer, or -1. */
   private joyU = -1;
   private waveUntil = -1;
   private lastOpen = 0;
   private still = false;
 
-  /** Place the cats for this building. The interview corner is left out when the kitchen is too narrow. */
+  constructor() {
+    const [info, boss, guest, h1, h2] = this.cats;
+    const g = (place: NpcPlace, a: Npc, b: Npc, next: number): Group => ({ place, a, b, next, sc: null, li: 0, lineAt: 0, lineEnd: 0, n: 0, hist: new Int16Array(HISTORY).fill(-1) });
+    this.groups.push(g('info', info, info, 6), g('interview', boss, guest, 3), g('lounge', h1, h2, 9));
+  }
+
+  /** Place the cats for this building. The interview room and the lounge bench are left out when too narrow. */
   setPlan(plan: BuildingLayout) {
-    const kitchen = plan.amenities.find((a) => a.kind === 'kitchen');
-    const key = `${plan.x0.toFixed(2)}:${plan.z0.toFixed(2)}:${kitchen ? `${kitchen.rect.x.toFixed(2)}:${kitchen.rect.z.toFixed(2)}:${kitchen.rect.w.toFixed(2)}:${kitchen.side}` : ''}`;
+    const room = plan.amenities.find((a) => a.kind === 'interview');
+    const lounge = plan.amenities.find((a) => a.kind === 'lounge');
+    const sig = (a?: { rect: { x: number; z: number; w: number }; side: string }) => (a ? `${a.rect.x.toFixed(2)}:${a.rect.z.toFixed(2)}:${a.rect.w.toFixed(2)}:${a.side}` : '');
+    const key = `${plan.x0.toFixed(2)}:${plan.z0.toFixed(2)}:${sig(room)}:${sig(lounge)}`;
     if (key === this.key) return;
     this.key = key;
-    const [info, boss, guest, w1] = this.cats;
+    const [info, boss, guest, h1, h2] = this.cats;
     const rc = (this.desk = receptionSpot(plan.x0, plan.z0));
     info.on = true;
     info.x = rc.x - 0.2;
     info.z = rc.z + 0.12;
-    const fits = !!kitchen && kitchen.rect.w >= INTERVIEW_MIN_W;
-    for (const c of [boss, guest, w1]) c.on = fits;
-    if (!fits || !kitchen) return;
-    const frame = { x: kitchen.rect.x, z: kitchen.rect.z, yaw: kitchen.side === 'north' ? 0 : Math.PI };
-    const put = (c: Npc, p: { x: number; z: number }, look: number) => {
-      const [x, z] = toWorld(frame, [p.x, p.z]);
+    const put = (c: Npc, a: NonNullable<typeof room>, p: { x: number; z: number }, face: number) => {
+      const [x, z] = toWorld({ x: a.rect.x, z: a.rect.z, yaw: a.side === 'north' ? 0 : Math.PI }, [p.x, p.z]);
       c.x = x;
       c.z = z + 0.1;
-      c.look = look;
+      c.bmin = a.rect.x - a.rect.w / 2 + 0.15;
+      c.bmax = a.rect.x + a.rect.w / 2 - 0.15;
+      c.face = face;
+      c.look = face * 0.7;
     };
-    put(boss, INTERVIEW.boss, -0.7);
-    put(guest, INTERVIEW.candidate, 0.7);
-    put(w1, INTERVIEW.waiting[0], 0.6);
+    const fits = !!room && room.rect.w >= INTERVIEW_MIN_W;
+    boss.on = guest.on = fits;
+    if (fits && room) {
+      put(boss, room, INTERVIEW.boss, 0);
+      put(guest, room, INTERVIEW.candidate, 0);
+      const f = Math.sign(guest.x - boss.x) || 1;
+      boss.face = f;
+      guest.face = -f;
+      boss.look = f * 0.7;
+      guest.look = -f * 0.7;
+    }
+    const hires = !!lounge && lounge.rect.w >= NEWHIRE_MIN_W;
+    h1.on = h2.on = hires;
+    if (hires && lounge) {
+      put(h1, lounge, NEWHIRES[0], 1);
+      put(h2, lounge, NEWHIRES[1], -1);
+      const f = Math.sign(h2.x - h1.x) || 1;
+      h1.face = f;
+      h2.face = -f;
+      h1.look = f * 0.5;
+      h2.look = -f * 0.5;
+    }
   }
 
   /** Sort keys: feet depth of each cat, or a far-away value when it is not shown. */
@@ -147,7 +209,7 @@ export class Npcs {
   // ---------------------------------------------------------------- frame
 
   update(t: number, elevOpen: number, reduced: boolean) {
-    const [info, boss, guest, w1] = this.cats;
+    const [info, boss, guest, h1, h2] = this.cats;
     if (reduced) {
       if (!this.still) {
         this.still = true;
@@ -155,63 +217,114 @@ export class Npcs {
           c.say = '';
           c.talk = c.hop = 0;
           c.status = 'working';
-          c.act.cheer = 0;
+          c.act.cheer = c.act.sip = c.act.stretch = c.act.prop = 0;
         }
+        for (const g of this.groups) g.sc = null;
         this.joyU = -1;
+        // one short static line from the info cat, kept up by drawBubbles
+        info.say = STILL_LINE;
+        info.sayFor = 1;
       }
       return;
     }
-    this.still = false;
-    // ---- info cat: sways a little, waves now and then or when the elevator opens, speaks every 20 to 40 s
+    if (this.still) {
+      this.still = false;
+      info.say = '';
+    }
+    // ---- info cat: sways a little, waves now and then or when the elevator opens
     if (elevOpen > 0.6 && this.lastOpen <= 0.6 && t > this.waveUntil + 4) this.waveUntil = t + WAVE_LIFE;
     this.lastOpen = elevOpen;
-    if (t >= this.infoNext) {
-      const n = this.infoN++;
-      this.say(info, INFO_LINES[n % INFO_LINES.length], t, BUBBLE_LIFE);
-      if (n % 2 === 0) this.waveUntil = t + WAVE_LIFE;
-      this.infoNext = t + 20 + rnd(n, 3) * 20;
-    }
+    for (const g of this.groups) if (g.a.on) this.play(g, t);
     info.look = Math.sin(t * 0.45) * 0.55;
     info.status = t < this.waveUntil ? 'waiting' : 'working';
     this.fade(info, t);
-    if (!boss.on) return;
-    // ---- interview
-    const cycle = Math.floor(t / CYCLE);
-    const p = t - cycle * CYCLE;
-    boss.say = guest.say = '';
-    let speaker = -1;
-    for (const e of TALK) {
-      if (p >= e.at && p < e.at + e.dur) {
-        this.say(e.who ? guest : boss, e.text, t - (p - e.at), e.dur);
-        speaker = e.who;
+    // ---- new hires on the lounge bench: glance around and fidget between lines
+    if (h1.on) {
+      for (const h of [h1, h2]) {
+        h.look = h.face * 0.25 + Math.sin(t * 0.55 + h.seed * 7) * 0.7;
+        h.hop = Math.max(h.hop, Math.max(0, Math.sin(t * 2.3 + h.seed * 11) - 0.92) * 0.35);
+        this.fade(h, t);
       }
     }
-    const pass = cycle % 2 === 0;
-    const verdict = p >= VERDICT_AT && p < VERDICT_AT + VERDICT_FOR;
-    if (verdict) {
-      const u = p - VERDICT_AT;
-      if (u < 1.8) this.say(boss, pass ? PASS : LATER, t - u, 1.8);
-      else this.say(guest, pass ? THANKS : '', t - (u - 1.8), VERDICT_FOR - 1.8);
-      speaker = u < 1.8 ? 0 : 1;
-    }
+    if (!boss.on) return;
     this.fade(boss, t);
     this.fade(guest, t);
-    // The listener nods; the speaker's mouth moves.
-    const nod = (c: Npc, on: boolean, phase: number) => {
-      c.hop = on ? Math.max(0, Math.sin(t * 3.2 + phase)) * 0.03 : 0;
-    };
-    nod(boss, speaker === 1, 0);
-    nod(guest, speaker === 0, 1);
-    const joy = verdict && pass && p - VERDICT_AT > 1.6;
-    const u = p - VERDICT_AT - 1.6;
-    this.joyU = joy ? u : -1;
-    guest.act.cheer = joy ? 1 : 0;
-    if (joy) guest.hop = Math.abs(Math.sin(u * 7)) * 0.16 * Math.max(0, 1 - u * 0.5);
-    // The waiting candidate glances at the table now and then and claps for a pass.
-    w1.look = Math.sin(t * 0.35 + w1.seed * 6) > 0.4 ? 0.9 : 0.4;
-    w1.hop = joy ? Math.abs(Math.sin(u * 6)) * 0.07 : 0;
-    w1.act.cheer = joy ? 0.5 : 0;
-    boss.look = speaker === 1 ? -0.8 : -0.6 + Math.sin(t * 0.5) * 0.2;
+    const g = this.groups[1];
+    const speaker = g.sc && g.li > 0 ? g.sc[g.li - 1].slot : -1;
+    boss.look = boss.face * (speaker === 1 ? 0.8 : 0.6 + Math.sin(t * 0.5) * 0.2);
+    guest.look = guest.face * (speaker === 0 ? 0.8 : 0.5);
+  }
+
+  /** Run one group: wait, pick a scenario, then say its lines one by one at a human pace. */
+  private play(g: Group, t: number) {
+    const { a, b } = g;
+    if (!g.sc) {
+      if (t < g.next) return;
+      const list = SCN[g.place];
+      const alt = g.place !== 'info' && rnd(g.n, 5) < 0.25 ? SCN.banter : list;
+      const base = alt === list ? PLACES.indexOf(g.place) : 3;
+      let k = 0;
+      let idx = 0;
+      for (let tries = 0; tries < 8; tries++) {
+        idx = Math.floor(rnd(g.n * 8 + tries, base + 11) * alt.length) % alt.length;
+        k = base * 100 + idx;
+        if (!g.hist.includes(k)) break;
+      }
+      g.hist[g.n % HISTORY] = k;
+      g.sc = alt[idx];
+      g.li = 0;
+      g.lineEnd = t;
+      g.n++;
+    }
+    if (t >= g.lineEnd) {
+      // next line, or the scenario is over and a pause of 6 to 20 s follows
+      if (g.li >= g.sc.length) {
+        g.sc = null;
+        g.next = t + 6 + rnd(g.n, 13) * 14;
+        a.say = b.say = '';
+        a.hop = b.hop = 0;
+        a.act.cheer = b.act.cheer = a.act.sip = b.act.sip = a.act.stretch = b.act.stretch = a.act.prop = b.act.prop = 0;
+        if (g.place === 'interview') this.joyU = -1;
+        return;
+      }
+      const ln = g.sc[g.li];
+      const dur = 1.6 + rnd(g.n, g.li + 17) * 1;
+      const c = ln.slot ? b : a;
+      c.say = '';
+      this.say(c, ln.text, t, dur);
+      g.lineAt = t;
+      g.lineEnd = t + dur;
+      g.li++;
+    }
+    // The line now being said: its action tag moves the speaker, the other cat nods along.
+    const ln = g.sc[g.li - 1];
+    const sp = ln.slot ? b : a;
+    const li = sp === a ? b : a;
+    const u = t - g.lineAt;
+    a.hop = b.hop = 0;
+    a.act.cheer = b.act.cheer = a.act.sip = b.act.sip = a.act.stretch = b.act.stretch = a.act.prop = b.act.prop = 0;
+    if (sp !== li) li.hop = Math.max(0, Math.sin(t * 3.2)) * 0.03;
+    if (g.place === 'interview') this.joyU = -1;
+    switch (ln.tag) {
+      case 'nod':
+        sp.hop = Math.max(0, Math.sin(u * 7)) * 0.03;
+        break;
+      case 'hop':
+        sp.hop = Math.abs(Math.sin(u * 7)) * 0.12 * Math.max(0, 1 - u * 0.4);
+        break;
+      case 'sip':
+        sp.act.prop = 1;
+        sp.act.sip = 1;
+        break;
+      case 'stretch':
+        sp.act.stretch = 1;
+        break;
+      case 'cheer':
+        sp.act.cheer = 1;
+        sp.hop = Math.abs(Math.sin(u * 7)) * 0.16 * Math.max(0, 1 - u * 0.5);
+        if (g.place === 'interview' && sp === b) this.joyU = u;
+        break;
+    }
   }
 
   /** Start a bubble unless one with the same text is already running. */
@@ -241,7 +354,8 @@ export class Npcs {
     ctx.lineJoin = 'round';
     const headCY = -0.8 + 0.2 * c.sit;
     if (c.role === 'boss') this.formal(ctx, c, headCY);
-    else if (c.role === 'guest' || c.role === 'wait') this.paper(ctx, c, tt);
+    else if (c.role === 'guest' || c.role === 'hire') this.paper(ctx, c, tt);
+    if (c.role === 'hire') this.tag(ctx);
     ctx.restore();
     if (c.role === 'info') this.counter(ctx);
   }
@@ -322,6 +436,12 @@ export class Npcs {
     ctx.restore();
   }
 
+  /** A tiny name tag on the chest. */
+  private tag(ctx: Ctx) {
+    rbox(ctx, 0, -0.02, 0.4, 0.18, '#fff7e6', 0.07, { lw: 0.025, shadow: false });
+    text(ctx, '신입', 0, -0.015, 0.13, '#5a3a40', { weight: 800 });
+  }
+
   /** The desk is drawn again over the info cat's legs, with its name plate on top. */
   private counter(ctx: Ctx) {
     const d = this.desk;
@@ -340,7 +460,7 @@ export class Npcs {
   drawBubbles(ctx: Ctx, t: number, k: number) {
     for (const c of this.cats) {
       if (!c.on || !c.say) continue;
-      const u = (t - c.sayAt) / c.sayFor;
+      const u = this.still ? 0.5 : (t - c.sayAt) / c.sayFor;
       if (u < 0 || u > 1) continue;
       const alpha = Math.min(1, u / 0.08, (1 - u) / 0.15);
       if (c.sayOf !== c.say) {
@@ -352,8 +472,8 @@ export class Npcs {
       const bw = (c.sayW + 0.34) * k;
       const lh = 0.27 * k;
       const bh = lh * lines.length + 0.2 * k;
-      // The two at the table keep their bubbles above and away from each other, and inside the wall.
-      const x = c.role === 'boss' ? c.x - (bw / 2 - 0.3 * k) : c.role === 'guest' ? c.x + (bw / 2 - 0.5 * k) : c.x;
+      // Above the head, pulled in so it stays inside its room.
+      const x = Math.max(Math.min(c.x, c.bmax - bw / 2), c.bmin + bw / 2);
       const bottom = c.z - (HEAD_TOP + 0.3 - 0.2 * c.sit + c.hop) * k;
       const y = bottom - bh / 2;
       ctx.save();
