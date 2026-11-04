@@ -50,11 +50,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/develop212/agent-floor.git"
+    "url": "git+https://github.com/SeongGi/ai-office.git"
   },
-  "homepage": "https://github.com/develop212/agent-floor#readme",
+  "homepage": "https://github.com/SeongGi/ai-office#readme",
   "bugs": {
-    "url": "https://github.com/develop212/agent-floor/issues"
+    "url": "https://github.com/SeongGi/ai-office/issues"
   },
   "optionalDependencies": {
     "electron": "^44.7.0"
