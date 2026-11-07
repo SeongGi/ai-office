@@ -28,6 +28,7 @@ export function clipText(text: unknown, max?: number): string;
 export function buildRows(state: WorldState, now: number, limit?: number): TimelineRow[];
 
 export interface RoomInfo {
+  icon: string;
   name: string;
   use: string;
   tools: string;
@@ -36,6 +37,7 @@ export interface RoomInfo {
 export type GuidePlace = 'library' | 'server' | 'search' | 'desk';
 export const ROOM_INFO: Record<GuidePlace, RoomInfo>;
 export const GUIDE_PLACES: GuidePlace[];
+export const PLACE_CLASS: Record<GuidePlace, ToolClass>;
 export function toolTag(tool: string | undefined | null, activity: string | undefined | null, max?: number): string;
 export function liveRoomCounts(memo: Map<string, ToolState>, agents: Record<string, Agent>, nowMs: number): Record<GuidePlace, number>;
 

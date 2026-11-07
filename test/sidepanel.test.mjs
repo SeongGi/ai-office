@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRoster, buildRows, clipText, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, relTime, ROOM_INFO, toolClass, toolTag } from '../shared/sidepanel.js';
+import { buildRoster, buildRows, clipText, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, PLACE_CLASS, relTime, ROOM_INFO, toolClass, toolTag } from '../shared/sidepanel.js';
 
 test('toolClass maps tools to room classes and other', () => {
   assert.equal(toolClass('Read'), 'library');
@@ -113,4 +113,14 @@ test('직원 목록은 다음 지시를 기다리는 세션에 idleWait 표시�
   const roster = buildRoster(state, 0);
   assert.equal(roster.find((r) => r.id === 'a').idleWait, true);
   assert.equal(roster.find((r) => r.id === 'b').idleWait, false);
+});
+
+test('every place has a unique name and an icon, and maps to a tally class', () => {
+  const names = new Set();
+  for (const p of GUIDE_PLACES) {
+    assert.ok(ROOM_INFO[p].icon, `${p} icon`);
+    names.add(ROOM_INFO[p].name);
+    assert.ok(Object.hasOwn(createTally().counts, PLACE_CLASS[p]), `${p} class`);
+  }
+  assert.equal(names.size, GUIDE_PLACES.length, 'names are unique');
 });
