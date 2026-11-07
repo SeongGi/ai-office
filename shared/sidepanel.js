@@ -66,12 +66,14 @@ export function buildRows(state, now, limit = TIMELINE_MAX) {
 
 /** What each place is for: the plaque in the room (use, tools) and the panel guide (plain). */
 export const ROOM_INFO = {
-  library: { name: '자료실', use: '파일 읽기와 찾기', tools: 'Read, Grep, Glob', plain: '파일 읽기, 찾기' },
-  server: { name: '서버실', use: '명령 실행, 빌드, 배포', tools: 'Bash', plain: '명령 실행, 빌드' },
-  search: { name: '정보검색실', use: '웹 검색, 자료 가져오기', tools: 'WebSearch, WebFetch, MCP', plain: '웹 검색, 자료 가져오기' },
-  desk: { name: '책상', use: '수정, 글쓰기 등', tools: 'Edit, Write', plain: '수정, 글쓰기 등' },
+  library: { name: '냥서재', icon: '📚', use: '파일 읽기와 찾기', tools: 'Read, Grep, Glob', plain: '파일 읽기, 찾기' },
+  server: { name: '냥서버실', icon: '🖥️', use: '명령 실행, 빌드, 배포', tools: 'Bash', plain: '명령 실행, 빌드' },
+  search: { name: '냥탐색실', icon: '🔭', use: '웹 검색, 자료 가져오기', tools: 'WebSearch, WebFetch, MCP', plain: '웹 검색, 자료 가져오기' },
+  desk: { name: '냥작업대', icon: '✏️', use: '수정, 글쓰기 등', tools: 'Edit, Write', plain: '수정, 글쓰기 등' },
 };
 export const GUIDE_PLACES = ['library', 'server', 'search', 'desk'];
+/** 방(place)과 도구 집계 분류(toolClass)의 짝. 책상만 이름이 다르다. */
+export const PLACE_CLASS = { library: 'library', server: 'server', search: 'search', desk: 'other' };
 
 /** Tiny tag for a cat in a tool room: 'Grep: 로그인 함수 찾는 중', the whole text cut to max characters. */
 export function toolTag(tool, activity, max = 14) {

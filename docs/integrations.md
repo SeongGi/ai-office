@@ -23,7 +23,7 @@ The real snippet also covers `UserPromptSubmit`, `PostToolUseFailure`, `Notifica
 | `SessionStart` | The lead walks in. |
 | `UserPromptSubmit` | Thinking, with your prompt as the activity. |
 | `PreToolUse` | Working. The monitor shows the tool and a readable summary ("Running npm test", "Editing cart.ts"). |
-| `PreToolUse` (while working) | Cats that keep reading or searching walk to a tool room: Read, Glob, Grep and LS to the library (자료실), Bash to the server room (서버실), WebSearch, WebFetch and MCP tools to the search room (정보검색실). Editing stays at the desk. |
+| `PreToolUse` (while working) | Cats that keep reading or searching walk to a tool room: Read, Glob, Grep and LS to the library (냥서재), Bash to the server room (냥서버실), WebSearch, WebFetch and MCP tools to the search room (정보검색실). Editing stays at the desk. |
 | `PreToolUse` on `Task` / `Agent` | A helper walks in and gets a briefing plane with the task description. |
 | `PreToolUse` on `TodoWrite` | The current todo goes on the team whiteboard. |
 | `PostToolUse` on `Task` / `Agent` | The helper sends a "Report ready" plane back and finishes. |
