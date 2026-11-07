@@ -35,7 +35,7 @@
     "start": "node bin/agent-floor.mjs start --open",
     "demo": "node bin/agent-floor.mjs demo",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --import ./test/support/clean-env.mjs test/*.test.mjs",
     "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {
