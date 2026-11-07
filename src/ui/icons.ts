@@ -9,10 +9,9 @@ import check from '@phosphor-icons/core/assets/regular/check.svg?raw';
 import play from '@phosphor-icons/core/assets/regular/play.svg?raw';
 import github from '@phosphor-icons/core/assets/regular/github-logo.svg?raw';
 import crosshair from '@phosphor-icons/core/assets/regular/crosshair.svg?raw';
-import cat from '@phosphor-icons/core/assets/regular/cat.svg?raw';
 import listBullets from '@phosphor-icons/core/assets/regular/list-bullets.svg?raw';
 
-export const icons = { listBullets, x, sun, moon, plug, cornersOut, copy, check, play, github, crosshair, cat };
+export const icons = { listBullets, x, sun, moon, plug, cornersOut, copy, check, play, github, crosshair };
 export type IconName = keyof typeof icons;
 
 export function icon(name: IconName) {
