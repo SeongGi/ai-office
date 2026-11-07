@@ -68,7 +68,7 @@ async function boot() {
     startDemo: () => {
       if (!isDemoRunning()) startDemo();
     },
-  });
+  }, view === '3d');
 
   createViewToggle(view);
 
