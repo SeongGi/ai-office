@@ -1237,7 +1237,31 @@ button {
 }
 
 .sp-room-icon {
-  font-size: 16px;
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: hsl(var(--room-h) 70% 38%);
+  background: hsl(var(--room-h) 80% 88%);
+}
+
+.sp-room-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+:root[data-theme='dark'] .sp-room-icon {
+  color: hsl(var(--room-h) 85% 78%);
+  background: hsl(var(--room-h) 45% 26%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .sp-room-icon {
+    color: hsl(var(--room-h) 85% 78%);
+    background: hsl(var(--room-h) 45% 26%);
+  }
 }
 
 .sp-room-name {
