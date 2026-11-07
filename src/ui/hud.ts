@@ -10,28 +10,11 @@ import pencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw';
 import { icon } from './icons';
 import { REPO_URL } from '../config';
 import { PANEL_KO, SidePanel } from './sidePanel';
+import { ago, el, esc } from './dom';
+import { declutter, type TagBox } from './declutter';
+import { SETUP } from './setupGuide';
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (html !== undefined) e.innerHTML = html;
-  return e;
-}
-
-function esc(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-}
-
-function ago(ts: number) {
-  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 5) return '방금';
-  if (s < 60) return `${s}초 전`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}분 전`;
-  return `${Math.round(m / 60)}시간 전`;
-}
-
-interface Tag {
+interface Tag extends TagBox {
   root: HTMLDivElement;
   /** Last values written to the DOM, so unchanged frames cost nothing. */
   last: { t: string; o: string; z: string; near: boolean; sel: boolean };
@@ -69,7 +52,6 @@ interface Tag {
 const TAG_JOB_MAX = 16;
 const COMPACT_ON = 20;
 const COMPACT_OFF = 17;
-const PAD = 3;
 
 interface Bubble {
   root: HTMLDivElement;
@@ -83,44 +65,6 @@ export interface HudActions {
   toggleTheme(): void;
   startDemo(): void;
 }
-
-const SETUP: Record<string, { title: string; steps: { label: string; code: string }[]; note: string }> = {
-  claude: {
-    title: 'Claude Code',
-    steps: [
-      { label: '설치하기', code: 'npm i -g agent-floor' },
-      { label: '~/.claude/settings.json에 훅 추가하기', code: 'agent-floor setup claude --write' },
-    ],
-    note: '세션이 시작되면 성기 주식회사가 저절로 열려요. 세션마다 프로젝트 폴더 이름의 사무실이 생기고, 서브에이전트는 들어와서 설명을 듣고 결과를 보고해요.',
-  },
-  codex: {
-    title: 'Codex',
-    steps: [
-      { label: '설치하기', code: 'npm i -g agent-floor' },
-      { label: '~/.codex/config.toml에 넣을 notify 줄 출력하기', code: 'agent-floor setup codex' },
-    ],
-    note: 'Codex는 매 차례가 끝날 때 알려 줘요. 그래서 책상은 답변 한 번에 한 번씩 바뀌어요.',
-  },
-  cursor: {
-    title: 'Cursor',
-    steps: [
-      { label: '설치하기', code: 'npm i -g agent-floor' },
-      { label: '~/.cursor/hooks.json에 훅 추가하기', code: 'agent-floor setup cursor --write' },
-    ],
-    note: '성기 주식회사는 듣기만 해요. 권한 요청에 대신 답하는 일은 절대 없어요.',
-  },
-  http: {
-    title: '그 밖의 도구',
-    steps: [
-      { label: '오피스 켜기', code: 'npx agent-floor' },
-      {
-        label: '아무 언어로나 이벤트 보내기',
-        code: `curl -X POST localhost:4317/events \\\n  -H 'content-type: application/json' \\\n  -d '{"type":"tool","agent":"bot-1","team":"Payments","tool":"Bash","activity":"테스트 돌리는 중"}'`,
-      },
-    ],
-    note: '이벤트 종류: join, status, tool, message, task, leave. 자세한 내용은 docs/protocol.md를 봐 주세요.',
-  },
-};
 
 export class Hud {
   private root = el('div', 'hud');
@@ -563,7 +507,7 @@ export class Hud {
         live.push(tag);
       } else tag.shown = false;
     }
-    this.declutter(live, dt);
+    declutter(live, dt, this.rects, innerWidth);
     for (const tag of live) {
       const x = tag.ax + tag.ox;
       const y = tag.ay + tag.oy;
@@ -605,69 +549,6 @@ export class Hud {
     tag.h = tag.root.offsetHeight;
     tag.visH = tag.compact ? tag.h : tag.pill.offsetTop + tag.pill.offsetHeight;
     tag.dirty = false;
-  }
-
-  /**
-   * Keep name tags from covering each other. Tags are placed one by one in a stable order (hovered and
-   * selected first, then nearest to the viewer, left to right). A tag that would overlap an earlier one
-   * moves to the closest free spot: up, or sideways. The shown position eases to the target.
-   */
-  private declutter(list: Tag[], dt: number) {
-    list.sort((a, b) => Number(b.hot) - Number(a.hot) || b.ay - a.ay || a.ax - b.ax);
-    const R = this.rects;
-    R.length = 0;
-    const W = innerWidth;
-    const hit = (x0: number, y0: number, x1: number, y1: number) => {
-      for (let i = 0; i < R.length; i += 4) if (x0 < R[i + 2] && R[i] < x1 && y0 < R[i + 3] && R[i + 1] < y1) return true;
-      return false;
-    };
-    const k = 1 - Math.exp(-dt * 14);
-    for (const t of list) {
-      const w = t.w * t.s;
-      const h = t.vh * t.s;
-      const left = t.ax - w / 2;
-      const top = t.ay - t.h * t.s;
-      let dx = 0;
-      let dy = 0;
-      if (hit(left - PAD, top - PAD, left + w + PAD, top + h + PAD)) {
-        let best = Infinity;
-        for (const bounded of [true, false]) {
-          for (let i = 0; i < R.length; i += 4) {
-            const q0 = R[i] + PAD;
-            const q1 = R[i + 1] + PAD;
-            const q2 = R[i + 2] - PAD;
-            // Spots next to this earlier tag: above it, left of it, right of it.
-            for (let c = 0; c < 3; c++) {
-              const cx = c === 1 ? q0 - PAD * 2 - 0.25 - (left + w) : c === 2 ? q2 + PAD * 2 + 0.25 - left : 0;
-              const cy = c === 0 ? Math.min(0, q1 - PAD * 2 - 0.25 - (top + h)) : 0;
-              const cost = Math.abs(cx) + 1.35 * Math.abs(cy);
-              if (cost >= best) continue;
-              const x0 = left + cx;
-              const y0 = top + cy;
-              if (bounded && (y0 < 4 || x0 < 4 || x0 + w > W - 4)) continue;
-              if (hit(x0 - PAD, y0 - PAD, x0 + w + PAD, y0 + h + PAD)) continue;
-              best = cost;
-              dx = cx;
-              dy = cy;
-            }
-          }
-          if (best < Infinity) break;
-        }
-      }
-      R.push(left + dx, top + dy, left + dx + w, top + dy + h);
-      t.tx = dx;
-      t.ty = dy;
-      if (!t.shown) {
-        t.shown = true;
-        t.ox = dx;
-        t.oy = dy;
-      } else {
-        t.ox += (dx - t.ox) * k;
-        t.oy += (dy - t.oy) * k;
-        if (Math.abs(dx - t.ox) < 0.2) t.ox = dx;
-        if (Math.abs(dy - t.oy) < 0.2) t.oy = dy;
-      }
-    }
   }
 
   /** A thin line from a moved tag back to the head it belongs to. */
