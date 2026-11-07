@@ -3,7 +3,7 @@ import type { ToolState } from '../../shared/places';
 import { buildRoster, buildRows, createTally, GUIDE_PLACES, liveRoomCounts, observeTools, PLACE_CLASS, ROOM_INFO, TOOL_CLASSES, type GuidePlace } from '../../shared/sidepanel';
 import { teamAccent } from '../world/palette';
 import { IDLE_WAIT_KO, STATUS_LABEL_KO } from './labels';
-import { icon } from './icons';
+import { catIcon } from './catIcons';
 
 /** 방마다 고양이 아이콘의 색을 달리해 한눈에 구분한다. */
 const ROOM_HUE: Record<GuidePlace, number> = { library: 28, server: 215, search: 160, desk: 330 };
@@ -150,7 +150,7 @@ export class SidePanel {
     this.roomsBox.innerHTML = GUIDE_PLACES.map((p) => {
       const info = ROOM_INFO[p];
       const now = this.live[p];
-      return `<div class="sp-room${now > 0 ? ' on' : ''}" style="--room-h:${ROOM_HUE[p]}"><span class="sp-room-icon">${icon('cat')}</span><span class="sp-room-name">${info.name}</span><span class="sp-room-plain">${info.plain}</span><span class="sp-room-now">${PANEL_KO.roomNow(now)}</span><span class="sp-room-total">${PANEL_KO.roomTotal(counts[PLACE_CLASS[p]])}</span></div>`;
+      return `<div class="sp-room${now > 0 ? ' on' : ''}" style="--room-h:${ROOM_HUE[p]}"><span class="sp-room-icon">${catIcon(p)}</span><span class="sp-room-name">${info.name}</span><span class="sp-room-plain">${info.plain}</span><span class="sp-room-now">${PANEL_KO.roomNow(now)}</span><span class="sp-room-total">${PANEL_KO.roomTotal(counts[PLACE_CLASS[p]])}</span></div>`;
     }).join('');
     this.list.innerHTML = rows.length
       ? rows

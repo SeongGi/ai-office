@@ -1248,8 +1248,13 @@ button {
 }
 
 .sp-room-icon .icon {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
+}
+
+/* .icon은 면을 채우는 아이콘 기준이라, 선으로 그린 고양이는 면 채우기를 끈다. */
+.sp-room-icon .cat-icon {
+  fill: none;
 }
 
 :root[data-theme='dark'] .sp-room-icon {
