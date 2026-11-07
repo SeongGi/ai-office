@@ -152,6 +152,12 @@ npm run build      # typecheck + production build into dist/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how the scene is put together and what makes a good adapter.
 
+## Credits
+
+This project started from [develop212/agent-floor](https://github.com/develop212/agent-floor) (MIT). The 3D office, the event protocol and the adapters come from that project.
+
+The 2D office (`src/world2d/`), the cat characters, the break-room and farewell scenes, and the later changes were made in this repository by SeongGi, together with Claude Code. Along the way I looked at other people's ideas for inspiration, but I did not copy their code.
+
 ## License
 
-MIT
+MIT. The original copyright notice is kept in [LICENSE](LICENSE), and the changes in this repository are added under the same license.
