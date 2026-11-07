@@ -99,7 +99,8 @@ export class Hud {
   private rects: number[] = [];
   private frameAt = 0;
 
-  constructor(container: HTMLElement, private actions: HudActions) {
+  /** canRotate는 3D 화면에서만 참이다. 2D는 회전이 없어서 힌트에서 뺀다. */
+  constructor(container: HTMLElement, private actions: HudActions, canRotate = false) {
     this.root.append(this.tagsLayer, this.bubblesLayer);
 
     // Top bar
@@ -136,7 +137,7 @@ export class Hud {
     connect.addEventListener('click', () => this.openSheet());
     this.demoNote.append(connect);
 
-    const hint = el('div', 'hint', '<span>드래그해서 이동</span><span>오른쪽 드래그로 회전</span><span>스크롤해서 확대</span><span>누구든 클릭해 보세요</span>');
+    const hint = el('div', 'hint', `<span>드래그해서 이동</span>${canRotate ? '<span>오른쪽 드래그로 회전</span>' : ''}<span>스크롤해서 확대</span><span>누구든 클릭해 보세요</span>`);
 
     this.empty.innerHTML = `<h2>오피스가 텅 비었어요</h2><p>훅을 설치한 에이전트를 시작하면 걸어 들어와서 책상에 앉아요.</p>`;
     const emptyActions = el('div', 'row');
