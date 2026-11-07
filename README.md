@@ -112,6 +112,8 @@ The full event format is in [docs/protocol.md](docs/protocol.md). More integrati
 | `AGENT_FLOOR_TEAM` | project folder name | hooks: put this session in a named room |
 | `AGENT_FLOOR_NAME` | `Claude`, `Codex`, `Cursor` | hooks: the lead's display name |
 | `AGENT_FLOOR_AUTOLAUNCH` | `1` | set to `0` so hooks never open the app |
+| `AGENT_FLOOR_SEED` | `1` | set to `0` so the server does not read the Claude Code sessions already open on this machine |
+| `AGENT_FLOOR_TOKEN` | none | if set on the server, every request must carry it; hooks and `emit` send it as a bearer token (see [docs/deploy-mini.md](docs/deploy-mini.md), written in Korean) |
 
 Group several repos into one room by giving them the same `AGENT_FLOOR_TEAM`.
 
@@ -120,7 +122,8 @@ Group several repos into one room by giving them the same `AGENT_FLOOR_TEAM`.
 - The server binds to `127.0.0.1` and only answers loopback host names.
 - `POST` requires `Content-Type: application/json`, so web pages cannot fire simple cross-site requests at it. CORS is limited to localhost origins.
 - Hooks time out after 1.2 seconds, swallow every error and always exit 0. If the floor is down, your agents never notice.
-- Nothing is stored on disk and nothing is sent anywhere else. Activity text is clipped to 280 characters.
+- Agent activity is kept in memory only and is not sent anywhere else. Activity text is clipped to 280 characters. The only files the server writes are the audit log, custom agent names and terminal routes under `data/` (git-ignored), and only when you use the remote-control features (closing a session or sending it an instruction).
+- On start the server also reads which Claude Code sessions are already open on this machine, so their project names show up in the office right away. Set `AGENT_FLOOR_SEED=0` to turn that off.
 
 ## The desktop app
 
@@ -140,7 +143,7 @@ agent-floor emit, curl, your code ───┼──► POST /events ──► r
                                         map native payloads     same reducer runs on both sides
 ```
 
-- `server/` is a zero-dependency Node HTTP server. `npx agent-floor` installs nothing else.
+- `server/` is a zero-dependency Node HTTP server.
 - `shared/protocol.js` is the event reducer, used verbatim by the server and the browser, so a snapshot plus the stream always matches.
 - `adapters/` turn each tool's hook payload into floor events. They are pure functions with tests.
 - `src/world2d/` is the 2D office: rooms, desks, the cats, letters and the camera.
