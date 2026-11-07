@@ -115,10 +115,9 @@ test('직원 목록은 다음 지시를 기다리는 세션에 idleWait 표시�
   assert.equal(roster.find((r) => r.id === 'b').idleWait, false);
 });
 
-test('every place has a unique name and an icon, and maps to a tally class', () => {
+test('every place has a unique name and maps to a tally class', () => {
   const names = new Set();
   for (const p of GUIDE_PLACES) {
-    assert.ok(ROOM_INFO[p].icon, `${p} icon`);
     names.add(ROOM_INFO[p].name);
     assert.ok(Object.hasOwn(createTally().counts, PLACE_CLASS[p]), `${p} class`);
   }

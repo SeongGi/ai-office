@@ -28,7 +28,6 @@ export function clipText(text: unknown, max?: number): string;
 export function buildRows(state: WorldState, now: number, limit?: number): TimelineRow[];
 
 export interface RoomInfo {
-  icon: string;
   name: string;
   use: string;
   tools: string;
