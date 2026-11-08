@@ -33,11 +33,21 @@ Compatibility: the old `AGENT_FLOOR_*` environment variables and the `~/.agent-f
 
 After that, the next time a Claude Code session starts, AI Office opens by itself in its own desktop window (no browser). Close the window and it keeps listening from the menu bar; use **Quit (pause auto-open for 6 hours)** in the menu bar icon when you want quiet. Run `ai-office` any time to open it yourself.
 
-If your floor runs on a remote server, open the desktop app on it with `ai-office app --url https://your-floor.example.com`. The app remembers the URL, so plain `ai-office` opens the same server next time. Sign in on the server's own login page inside the window; if `AI_OFFICE_TOKEN` is set, the app sends it as a cookie (never in the URL).
-
 Start a Claude Code session in any project. A cat walks into a room named after the project folder, sits down, and starts working. When it spawns a subagent, a new teammate walks in, gets briefed by letter, works at its own desk, and reports back.
 
 No agents yet? Click **Watch demo**, or run `ai-office demo` in a second terminal.
+
+## Ways to run
+
+| Mode | Command | Sign-in | Remote control |
+| --- | --- | --- | --- |
+| **Local only** | `ai-office` | None. There is no address to set, and it only listens on 127.0.0.1. | Yes, from this computer |
+| **Server + token** | `docker compose -f docker-compose.token.yml up -d --build` | Enter the token on the login screen the first time you connect. | No |
+| **Server + Google sign-in** | `docker compose up -d --build` | Google sign-in through oauth2-proxy. | Yes |
+
+For the Google sign-in mode, follow [docs/deploy-mini.md](docs/deploy-mini.md) (written in Korean). It needs oauth2-proxy and a list of allowed emails. The token mode binds to 127.0.0.1 by default; to reach it from other devices, set `AI_OFFICE_BIND=0.0.0.0` and put it behind an HTTPS reverse proxy, because over plain HTTP the token travels in the clear. Hooks send the token as a bearer token. Closing sessions and sending instructions only work in the Google sign-in mode.
+
+To point the desktop app at a server, pick it on the first-run screen, or run `ai-office app --url https://your-floor.example.com`. The app remembers the choice, so plain `ai-office` opens the same server next time. Change it later from the menu bar icon with **Change server…**. Sign in on the server's own login page inside the window; if `AI_OFFICE_TOKEN` is set, the app sends it as a cookie (never in the URL).
 
 ## What you see
 

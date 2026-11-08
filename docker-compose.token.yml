@@ -1,0 +1,37 @@
+# 토큰만 쓰는 서버 실행 방식(Google 로그인 없음). 서비스는 app 하나뿐인 독립 compose 파일이다.
+#
+# 실행: docker compose -f docker-compose.token.yml up -d --build
+#   .env에 AI_OFFICE_TOKEN을 적어 둬야 한다.
+#
+# 사람은 처음 접속할 때 로그인 화면에 토큰을 넣고, 훅은 Bearer 토큰으로 보낸다.
+#
+# 다른 기기에서 접속하려면 AI_OFFICE_BIND=0.0.0.0으로 바꾸고 HTTPS 리버스 프록시 뒤에 둔다.
+# HTTP 그대로면 토큰이 평문으로 오간다. 기본값(127.0.0.1)은 이 컴퓨터에서만 열린다.
+#
+# 세션 닫기와 지시 보내기 같은 제어 기능은 Google 로그인 방식(docker-compose.yml)에서만 쓸 수 있다.
+# server/index.mjs의 관리자 판정이 프록시 이메일이나 loopback일 때만 참이기 때문이다.
+#
+# AI_OFFICE_TRUST_PROXY_EMAIL은 일부러 넣지 않았다. 프록시가 없는데 켜면 위조한 이메일 헤더를 믿게 된다.
+services:
+  app:
+    build: .
+    image: ai-office:latest
+    restart: unless-stopped
+    environment:
+      AI_OFFICE_HOST: 0.0.0.0
+      AI_OFFICE_TOKEN: ${AI_OFFICE_TOKEN:?.env에 AI_OFFICE_TOKEN을 적어 주세요}
+      AI_OFFICE_ROOM_MAX: ${AI_OFFICE_ROOM_MAX:-5}
+      AI_OFFICE_AUDIT: /data/audit.log
+    ports:
+      - "${AI_OFFICE_BIND:-127.0.0.1}:4317:4317"
+    volumes:
+      - audit:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4317/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  audit:
