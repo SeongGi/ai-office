@@ -4,17 +4,24 @@
 // runs inside this process unless one is already running. The window can be
 // closed; the app keeps listening from the menu bar / system tray so hooks
 // never have to relaunch it. "Quit" pauses auto-launch for a while.
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, nativeTheme, session, ipcMain } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { markPng } = require('./icon.cjs');
 const { snooze } = require('./state.cjs');
-const { resolveTarget, allowInWindow } = require('./target.cjs');
+const { resolveTarget, allowInWindow, saveChoice, currentChoice, remoteOrigin } = require('./target.cjs');
+const { env } = require('../shared/env.cjs');
 
-// 원격 서버 주소가 있으면 그 서버를, 없으면 로컬 서버를 연다(desktop/target.cjs).
-const TARGET = resolveTarget();
-const PORT = TARGET.port;
+// 원격 서버 주소가 있으면 그 서버를, 저장된 선택이 로컬이면 로컬 서버를 연다(desktop/target.cjs).
+// 저장된 선택이 없으면 needsChoice가 켜지고, 창에 연결 방식 선택 화면(choose.html)을 띄운다.
+let TARGET = resolveTarget();
 const startedByHook = process.argv.includes('--from-hook');
+// 훅은 로컬 주소일 때만 앱을 연다(bin/ai-office.mjs). 이때 선택 화면을 띄우면 고를 때까지 로컬 서버가
+// 없어 이벤트가 버려지므로, 선택을 저장하지 않고 이번에는 로컬로 연다.
+if (TARGET.needsChoice && startedByHook) TARGET = { ...TARGET, needsChoice: false };
+const PORT = TARGET.port;
+const CHOOSER = path.join(__dirname, 'choose.html');
+const CHOOSER_URL = pathToFileURL(CHOOSER).href;
 
 app.setName('AI Office');
 
@@ -26,6 +33,7 @@ if (!app.requestSingleInstanceLock()) {
   let tray = null;
   let floor = null;
   let quitting = false;
+  let chooseShown = false; // 지금 창에 선택 화면(choose.html)이 떠 있는지
 
   async function serverIsUp() {
     try {
@@ -37,19 +45,27 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function ensureServer() {
-    if (TARGET.remote) return; // 원격 서버를 볼 때는 로컬 서버를 띄우지 않는다.
+    if (TARGET.remote || TARGET.needsChoice) return; // 원격 서버를 볼 때와 선택 전에는 로컬 서버를 띄우지 않는다.
     if (await serverIsUp()) return;
     const { startServer } = await import(pathToFileURL(path.join(__dirname, '../server/index.mjs')).href);
     floor = await startServer({ port: PORT, log: () => {} });
   }
 
-  function createWindow() {
+  function loadChooser() {
+    chooseShown = true;
+    win.loadFile(CHOOSER);
+  }
+
+  // forceChoose가 true이면 서버 대신 선택 화면을 띄운다. 저장된 선택이 없을 때도 선택 화면을 띄운다.
+  function createWindow(forceChoose = false) {
     if (win) {
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
+      if (forceChoose === true && !chooseShown) loadChooser();
       return;
     }
+    chooseShown = false;
     win = new BrowserWindow({
       width: 1440,
       height: 920,
@@ -61,7 +77,7 @@ if (!app.requestSingleInstanceLock()) {
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       autoHideMenuBar: true,
       icon: nativeImage.createFromBuffer(markPng(256, { background: true })),
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true },
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true, preload: path.join(__dirname, 'preload.cjs') },
     });
     win.once('ready-to-show', () => {
       // Opened by an agent hook: show without stealing focus from your editor.
@@ -74,7 +90,8 @@ if (!app.requestSingleInstanceLock()) {
       return { action: 'deny' };
     });
     win.webContents.on('will-navigate', (e, url) => {
-      if (!allowInWindow(TARGET, url)) {
+      // 선택 화면에서는 어디로도 이동하지 못하게 하고, 외부 링크는 브라우저로 연다.
+      if (chooseShown || !allowInWindow(TARGET, url)) {
         e.preventDefault();
         shell.openExternal(url);
       }
@@ -87,8 +104,53 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
     win.on('closed', () => (win = null));
-    win.loadURL(TARGET.url);
+    if (forceChoose === true || TARGET.needsChoice) loadChooser();
+    else win.loadURL(TARGET.url);
   }
+
+  // 선택 화면(choose.html)에서 온 요청만 믿는다. 원격 서버의 페이지는 이 IPC를 부를 수 없다.
+  function fromChooser(e) {
+    try {
+      const u = new URL(e.senderFrame?.url || '');
+      return `${u.protocol}//${u.host}${u.pathname}` === CHOOSER_URL;
+    } catch {
+      return false;
+    }
+  }
+
+  ipcMain.handle('choice:current', (e) => {
+    if (!fromChooser(e)) return null;
+    // 환경변수 주소가 우선이면 선택 화면이 그 사실을 알려 줄 수 있도록 envUrl을 함께 준다.
+    return { ...(currentChoice() || {}), envUrl: remoteOrigin(env('URL')) || '', canCancel: !TARGET.needsChoice };
+  });
+
+  // 서버 바꾸기를 취소하면 지금 연결된 곳으로 돌아간다. 아직 고르지 않았으면 돌아갈 곳이 없다.
+  ipcMain.handle('choice:cancel', (e) => {
+    if (!fromChooser(e) || TARGET.needsChoice || !win) return false;
+    chooseShown = false;
+    win.loadURL(TARGET.url);
+    return true;
+  });
+
+  ipcMain.handle('choice:save', (e, c) => {
+    if (!fromChooser(e)) return { ok: false, error: '허용되지 않은 요청이에요.' };
+    let choice;
+    if (c && typeof c === 'object' && c.mode === 'local') choice = { mode: 'local' };
+    else if (c && typeof c === 'object' && typeof c.url === 'string') choice = { url: c.url };
+    else return { ok: false, error: '연결 방식을 고르지 못했어요.' };
+    const result = saveChoice(choice);
+    if (result.ok) {
+      // 다시 시작하면 로컬 서버를 띄우거나 끄는 처리를 새 실행이 알아서 한다.
+      try {
+        floor?.close();
+      } catch {
+        /* 종료 중이므로 무시한다 */
+      }
+      app.relaunch();
+      app.exit(0);
+    }
+    return result;
+  });
 
   function createTray() {
     const image =
@@ -100,7 +162,8 @@ if (!app.requestSingleInstanceLock()) {
     tray.setToolTip('AI Office');
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Show AI Office', click: createWindow },
+        { label: 'Show AI Office', click: () => createWindow() },
+        { label: 'Change server…', click: () => createWindow(true) },
         { type: 'separator' },
         {
           label: 'Quit (pause auto-open for 6 hours)',
@@ -119,11 +182,11 @@ if (!app.requestSingleInstanceLock()) {
         },
       ]),
     );
-    tray.on('click', createWindow);
+    tray.on('click', () => createWindow());
   }
 
-  app.on('second-instance', createWindow);
-  app.on('activate', createWindow);
+  app.on('second-instance', () => createWindow());
+  app.on('activate', () => createWindow());
   app.on('before-quit', () => (quitting = true));
   app.on('window-all-closed', () => {
     /* keep running in the tray */

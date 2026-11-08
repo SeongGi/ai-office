@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Office</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #e7ebf0;
+    --card: #ffffff;
+    --text: #1b2430;
+    --muted: #566273;
+    --line: #c5ccd6;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --warn-bg: #fff3d6;
+    --warn-text: #6b4a00;
+    --error: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0e13;
+      --card: #151a22;
+      --text: #e6ebf2;
+      --muted: #9aa6b6;
+      --line: #2c3542;
+      --accent: #5b8def;
+      --accent-text: #0b0e13;
+      --warn-bg: #3a2e10;
+      --warn-text: #f2d48a;
+      --error: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  main { width: min(520px, 92vw); padding: 24px 0; }
+  h1 { font-size: 22px; margin: 0 0 18px; }
+  .notice {
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 14px;
+  }
+  label.option {
+    display: block;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  label.option:has(input[type="radio"]:checked) { border-color: var(--accent); }
+  .title { font-weight: 600; margin-left: 8px; }
+  .desc { display: block; color: var(--muted); font-size: 14px; margin: 4px 0 0 26px; }
+  input[type="text"] {
+    display: block;
+    width: calc(100% - 26px);
+    margin: 10px 0 0 26px;
+    padding: 9px 10px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  input[type="text"]:disabled { opacity: 0.5; }
+  .row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 22px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+  #error { color: var(--error); font-size: 14px; }
+  button.secondary { background: transparent; color: inherit; border: 1px solid currentColor; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Office를 어디에 연결할까요?</h1>
+  <div id="notice" class="notice" hidden>지금은 환경변수 AI_OFFICE_URL이 우선이에요</div>
+
+  <label class="option">
+    <input type="radio" name="mode" value="local" checked>
+    <span class="title">이 컴퓨터에서만 보기</span>
+    <span class="desc">이 컴퓨터의 에이전트만 보여요. 로그인이 없어요.</span>
+  </label>
+
+  <label class="option">
+    <input type="radio" name="mode" value="remote">
+    <span class="title">서버에 연결하기</span>
+    <span class="desc">팀 서버에 연결해요. 서버의 로그인 화면(토큰 또는 Google)에서 들어가요.</span>
+    <input type="text" id="url" placeholder="https://ai-office.example.com" spellcheck="false" autocomplete="off" disabled>
+  </label>
+
+  <div class="row">
+    <button id="go" type="button">연결</button>
+    <button id="cancel" type="button" class="secondary" hidden>취소</button>
+    <span id="error" role="alert"></span>
+  </div>
+</main>
+<script>
+  const urlInput = document.getElementById('url');
+  const errorBox = document.getElementById('error');
+  const goButton = document.getElementById('go');
+  const radios = Array.from(document.querySelectorAll('input[name="mode"]'));
+
+  function mode() {
+    return radios.find((r) => r.checked).value;
+  }
+
+  function sync() {
+    const remote = mode() === 'remote';
+    urlInput.disabled = !remote;
+    if (remote) urlInput.focus();
+  }
+
+  async function connect() {
+    errorBox.textContent = '';
+    const choice = mode() === 'local' ? { mode: 'local' } : { url: urlInput.value.trim() };
+    if (!choice.mode && !choice.url) {
+      errorBox.textContent = '서버 주소를 입력해 주세요.';
+      return;
+    }
+    goButton.disabled = true;
+    try {
+      const result = await window.aiOffice.choose(choice);
+      // 저장에 성공하면 앱이 다시 시작되므로 여기까지 오지 않을 수 있다.
+      if (!result || !result.ok) {
+        errorBox.textContent = (result && result.error) || '저장하지 못했어요.';
+        goButton.disabled = false;
+      }
+    } catch {
+      errorBox.textContent = '저장하지 못했어요.';
+      goButton.disabled = false;
+    }
+  }
+
+  radios.forEach((r) => r.addEventListener('change', sync));
+  goButton.addEventListener('click', connect);
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') connect();
+  });
+
+  // 지금 저장된 값을 미리 채운다.
+  (async () => {
+    try {
+      const c = await window.aiOffice.current();
+      if (c && c.url) {
+        radios.find((r) => r.value === 'remote').checked = true;
+        urlInput.value = c.url;
+      } else if (c && c.mode === 'local') {
+        radios.find((r) => r.value === 'local').checked = true;
+      }
+      if (c && c.envUrl) document.getElementById('notice').hidden = false;
+      if (c && c.canCancel) {
+        const cancel = document.getElementById('cancel');
+        cancel.hidden = false;
+        cancel.addEventListener('click', () => window.aiOffice.cancel());
+      }
+    } catch {
+      /* 미리 채우지 못해도 화면은 그대로 쓸 수 있다 */
+    }
+    sync();
+  })();
+</script>
+</body>
+</html>
