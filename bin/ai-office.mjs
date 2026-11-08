@@ -169,6 +169,8 @@ async function openApp({ fromHook = false, browser = false } = {}) {
 
 async function app(args) {
   const f = flags(args);
+  // --url <주소>: 데스크톱 앱이 열 원격 서버. 앱이 주소를 저장하므로 처음 한 번만 주면 된다.
+  if (typeof f.url === 'string') process.env.AI_OFFICE_URL = f.url;
   const how = await openApp({ browser: Boolean(f.browser) });
   console.log(
     how === 'desktop'
@@ -475,6 +477,7 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`ai-office: a live 3D office for your coding agents
 
   ai-office                              open the desktop app (starts the floor too)
+  ai-office app --url <https://...>      open the desktop app on a remote floor (the URL is remembered)
   ai-office start [--port 4317] [--open] run the floor without a window
   ai-office setup <claude|codex|cursor> [--write] [--project]
   ai-office emit --agent <id> --status working --activity "Writing tests" [--team checkout]

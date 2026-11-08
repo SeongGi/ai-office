@@ -4,15 +4,16 @@
 // runs inside this process unless one is already running. The window can be
 // closed; the app keeps listening from the menu bar / system tray so hooks
 // never have to relaunch it. "Quit" pauses auto-launch for a while.
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, nativeTheme, session } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { markPng } = require('./icon.cjs');
 const { snooze } = require('./state.cjs');
-const { env } = require('../shared/env.cjs');
+const { resolveTarget } = require('./target.cjs');
 
-const PORT = Number(env('PORT')) || 4317;
-const URL = `http://127.0.0.1:${PORT}/?app=1`;
+// 원격 서버 주소가 있으면 그 서버를, 없으면 로컬 서버를 연다(desktop/target.cjs).
+const TARGET = resolveTarget();
+const PORT = TARGET.port;
 const startedByHook = process.argv.includes('--from-hook');
 
 app.setName('AI Office');
@@ -36,6 +37,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function ensureServer() {
+    if (TARGET.remote) return; // 원격 서버를 볼 때는 로컬 서버를 띄우지 않는다.
     if (await serverIsUp()) return;
     const { startServer } = await import(pathToFileURL(path.join(__dirname, '../server/index.mjs')).href);
     floor = await startServer({ port: PORT, log: () => {} });
@@ -72,7 +74,7 @@ if (!app.requestSingleInstanceLock()) {
       return { action: 'deny' };
     });
     win.webContents.on('will-navigate', (e, url) => {
-      if (!url.startsWith(`http://127.0.0.1:${PORT}`)) {
+      if (!url.startsWith(TARGET.origin)) {
         e.preventDefault();
         shell.openExternal(url);
       }
@@ -85,7 +87,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
     win.on('closed', () => (win = null));
-    win.loadURL(URL);
+    win.loadURL(TARGET.url);
   }
 
   function createTray() {
@@ -139,6 +141,12 @@ if (!app.requestSingleInstanceLock()) {
       ]),
     );
     await ensureServer();
+    if (TARGET.remote && TARGET.token) {
+      // 토큰은 주소에 싣지 않고 그 서버에만 가는 쿠키로 넣는다(desktop/target.cjs 설명 참고).
+      await session.defaultSession.cookies
+        .set({ url: TARGET.origin, name: 'af_token', value: TARGET.token, httpOnly: true, secure: TARGET.origin.startsWith('https:'), sameSite: 'lax', expirationDate: Date.now() / 1000 + 31536000 })
+        .catch(() => {});
+    }
     createTray();
     createWindow();
   });
