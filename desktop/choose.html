@@ -95,6 +95,7 @@
   }
   button:disabled { opacity: 0.6; cursor: default; }
   #error { color: var(--error); font-size: 14px; }
+  button.secondary { background: transparent; color: inherit; border: 1px solid currentColor; }
 </style>
 </head>
 <body>
@@ -117,6 +118,7 @@
 
   <div class="row">
     <button id="go" type="button">연결</button>
+    <button id="cancel" type="button" class="secondary" hidden>취소</button>
     <span id="error" role="alert"></span>
   </div>
 </main>
@@ -174,6 +176,11 @@
         radios.find((r) => r.value === 'local').checked = true;
       }
       if (c && c.envUrl) document.getElementById('notice').hidden = false;
+      if (c && c.canCancel) {
+        const cancel = document.getElementById('cancel');
+        cancel.hidden = false;
+        cancel.addEventListener('click', () => window.aiOffice.cancel());
+      }
     } catch {
       /* 미리 채우지 못해도 화면은 그대로 쓸 수 있다 */
     }

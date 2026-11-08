@@ -45,7 +45,7 @@ No agents yet? Click **Watch demo**, or run `ai-office demo` in a second termina
 | **Server + token** | `docker compose -f docker-compose.token.yml up -d --build` | Enter the token on the login screen the first time you connect. | No |
 | **Server + Google sign-in** | `docker compose up -d --build` | Google sign-in through oauth2-proxy. | Yes |
 
-For the Google sign-in mode, follow [docs/deploy-mini.md](docs/deploy-mini.md) (written in Korean). It needs oauth2-proxy and a list of allowed emails. The token mode binds to 127.0.0.1 by default; to reach it from other devices, set `AI_OFFICE_BIND=0.0.0.0` and put it behind an HTTPS reverse proxy, because over plain HTTP the token travels in the clear. Hooks send the token as a bearer token. Closing sessions and sending instructions only work in the Google sign-in mode.
+For the Google sign-in mode, follow [docs/deploy-mini.md](docs/deploy-mini.md) (written in Korean). It needs oauth2-proxy and a list of allowed emails. The token mode binds to 127.0.0.1 by default; to reach it from other devices, set `AI_OFFICE_BIND=0.0.0.0` and put it behind an HTTPS reverse proxy, because over plain HTTP the token travels in the clear. Hooks send the token as a bearer token. Of the two server modes, only the Google sign-in mode lets you close sessions and send instructions.
 
 To point the desktop app at a server, pick it on the first-run screen, or run `ai-office app --url https://your-floor.example.com`. The app remembers the choice, so plain `ai-office` opens the same server next time. Change it later from the menu bar icon with **Change server…**. Sign in on the server's own login page inside the window; if `AI_OFFICE_TOKEN` is set, the app sends it as a cookie (never in the URL).
 

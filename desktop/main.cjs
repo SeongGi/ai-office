@@ -15,8 +15,13 @@ const { env } = require('../shared/env.cjs');
 // 원격 서버 주소가 있으면 그 서버를, 저장된 선택이 로컬이면 로컬 서버를 연다(desktop/target.cjs).
 // 저장된 선택이 없으면 needsChoice가 켜지고, 창에 연결 방식 선택 화면(choose.html)을 띄운다.
 let TARGET = resolveTarget();
-const PORT = TARGET.port;
 const startedByHook = process.argv.includes('--from-hook');
+// 훅은 로컬 주소일 때만 앱을 연다(bin/ai-office.mjs). 이때 선택 화면을 띄우면 고를 때까지 로컬 서버가
+// 없어 이벤트가 버려지므로, 선택을 저장하지 않고 이번에는 로컬로 연다.
+if (TARGET.needsChoice && startedByHook) TARGET = { ...TARGET, needsChoice: false };
+const PORT = TARGET.port;
+const CHOOSER = path.join(__dirname, 'choose.html');
+const CHOOSER_URL = pathToFileURL(CHOOSER).href;
 
 app.setName('AI Office');
 
@@ -48,7 +53,7 @@ if (!app.requestSingleInstanceLock()) {
 
   function loadChooser() {
     chooseShown = true;
-    win.loadFile(path.join(__dirname, 'choose.html'));
+    win.loadFile(CHOOSER);
   }
 
   // forceChoose가 true이면 서버 대신 선택 화면을 띄운다. 저장된 선택이 없을 때도 선택 화면을 띄운다.
@@ -107,7 +112,7 @@ if (!app.requestSingleInstanceLock()) {
   function fromChooser(e) {
     try {
       const u = new URL(e.senderFrame?.url || '');
-      return u.protocol === 'file:' && u.pathname.endsWith('/choose.html');
+      return `${u.protocol}//${u.host}${u.pathname}` === CHOOSER_URL;
     } catch {
       return false;
     }
@@ -116,7 +121,15 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('choice:current', (e) => {
     if (!fromChooser(e)) return null;
     // 환경변수 주소가 우선이면 선택 화면이 그 사실을 알려 줄 수 있도록 envUrl을 함께 준다.
-    return { ...(currentChoice() || {}), envUrl: remoteOrigin(env('URL')) || '' };
+    return { ...(currentChoice() || {}), envUrl: remoteOrigin(env('URL')) || '', canCancel: !TARGET.needsChoice };
+  });
+
+  // 서버 바꾸기를 취소하면 지금 연결된 곳으로 돌아간다. 아직 고르지 않았으면 돌아갈 곳이 없다.
+  ipcMain.handle('choice:cancel', (e) => {
+    if (!fromChooser(e) || TARGET.needsChoice || !win) return false;
+    chooseShown = false;
+    win.loadURL(TARGET.url);
+    return true;
   });
 
   ipcMain.handle('choice:save', (e, c) => {
@@ -150,7 +163,7 @@ if (!app.requestSingleInstanceLock()) {
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: 'Show AI Office', click: () => createWindow() },
-        { label: '서버 바꾸기…', click: () => createWindow(true) },
+        { label: 'Change server…', click: () => createWindow(true) },
         { type: 'separator' },
         {
           label: 'Quit (pause auto-open for 6 hours)',
