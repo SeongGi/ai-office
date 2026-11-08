@@ -1,11 +1,11 @@
 {
-  "name": "agent-floor",
+  "name": "ai-office",
   "version": "0.1.0",
   "description": "A live 2D office for your coding agents, staffed by cats. See every agent at its desk, what it is doing, and who it is talking to. Works with Claude Code, Codex, Cursor, or anything that can send an HTTP request.",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "agent-floor": "bin/agent-floor.mjs"
+    "ai-office": "bin/ai-office.mjs"
   },
   "files": [
     "adapters",
@@ -33,8 +33,8 @@
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && vite build",
     "build:pages": "tsc --noEmit && vite build --base=./ --mode pages --outDir dist-pages",
-    "start": "node bin/agent-floor.mjs start --open",
-    "demo": "node bin/agent-floor.mjs demo",
+    "start": "node bin/ai-office.mjs start --open",
+    "demo": "node bin/ai-office.mjs demo",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import ./test/support/clean-env.mjs test/*.test.mjs",
     "prepublishOnly": "npm run build && npm test"

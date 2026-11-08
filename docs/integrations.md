@@ -4,14 +4,14 @@ Every integration does the same thing: turn "something happened in my agent" int
 
 ## Claude Code
 
-`agent-floor setup claude --write` merges this into `~/.claude/settings.json` (a `.bak` copy of the old file is kept):
+`ai-office setup claude --write` merges this into `~/.claude/settings.json` (a `.bak` copy of the old file is kept):
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "agent-floor hook claude", "timeout": 5 }] }],
-    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "agent-floor hook claude", "timeout": 5 }] }],
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "agent-floor hook claude", "timeout": 5 }] }]
+    "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "ai-office hook claude", "timeout": 5 }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "ai-office hook claude", "timeout": 5 }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "ai-office hook claude", "timeout": 5 }] }]
   }
 }
 ```
@@ -32,34 +32,34 @@ The real snippet also covers `UserPromptSubmit`, `PostToolUseFailure`, `Notifica
 | `Stop` | Idle. |
 | `SessionEnd` | The lead walks out. |
 
-Run `agent-floor setup claude --project` to print a snippet for one repository's `.claude/settings.json` instead.
+Run `ai-office setup claude --project` to print a snippet for one repository's `.claude/settings.json` instead.
 
 ## Codex
 
 ```toml
 # ~/.codex/config.toml
-notify = ["node", "/absolute/path/to/agent-floor/bin/agent-floor.mjs", "hook", "codex"]
+notify = ["node", "/absolute/path/to/ai-office/bin/ai-office.mjs", "hook", "codex"]
 ```
 
-`agent-floor setup codex` prints the exact line for your install. Codex calls `notify` when a turn completes, so the desk updates once per reply. Codex accepts a single `notify` program. If you already use one, call both from a small wrapper script.
+`ai-office setup codex` prints the exact line for your install. Codex calls `notify` when a turn completes, so the desk updates once per reply. Codex accepts a single `notify` program. If you already use one, call both from a small wrapper script.
 
-If your Codex build supports Claude-style hooks with `hook_event_name` payloads on stdin, use `agent-floor hook codex` there and you get per-tool updates as well.
+If your Codex build supports Claude-style hooks with `hook_event_name` payloads on stdin, use `ai-office hook codex` there and you get per-tool updates as well.
 
 ## Cursor
 
-`agent-floor setup cursor --write` merges observing hooks into `~/.cursor/hooks.json`:
+`ai-office setup cursor --write` merges observing hooks into `~/.cursor/hooks.json`:
 
 ```json
 {
   "version": 1,
   "hooks": {
-    "beforeSubmitPrompt": [{ "command": "agent-floor hook cursor" }],
-    "afterFileEdit": [{ "command": "agent-floor hook cursor" }],
-    "afterShellExecution": [{ "command": "agent-floor hook cursor" }],
-    "afterMCPExecution": [{ "command": "agent-floor hook cursor" }],
-    "afterAgentResponse": [{ "command": "agent-floor hook cursor" }],
-    "afterAgentThought": [{ "command": "agent-floor hook cursor" }],
-    "stop": [{ "command": "agent-floor hook cursor" }]
+    "beforeSubmitPrompt": [{ "command": "ai-office hook cursor" }],
+    "afterFileEdit": [{ "command": "ai-office hook cursor" }],
+    "afterShellExecution": [{ "command": "ai-office hook cursor" }],
+    "afterMCPExecution": [{ "command": "ai-office hook cursor" }],
+    "afterAgentResponse": [{ "command": "ai-office hook cursor" }],
+    "afterAgentThought": [{ "command": "ai-office hook cursor" }],
+    "stop": [{ "command": "ai-office hook cursor" }]
   }
 }
 ```
@@ -108,14 +108,14 @@ await floor({ type: 'tool', agent: 'planner', team: 'Release', tool: 'git', acti
 ### Shell
 
 ```bash
-agent-floor emit --agent deploy-bot --team Release --status working --activity "Rolling out to eu-west"
-agent-floor emit --agent deploy-bot --to planner --text "Rollout done"
-agent-floor emit --agent deploy-bot --type leave
+ai-office emit --agent deploy-bot --team Release --status working --activity "Rolling out to eu-west"
+ai-office emit --agent deploy-bot --to planner --text "Rollout done"
+ai-office emit --agent deploy-bot --type leave
 ```
 
 ## Writing a new adapter
 
 1. Add `adapters/<tool>.mjs` exporting a pure function from the tool's payload to an array of events.
-2. Wire it into the `hook` command in `bin/agent-floor.mjs`, and to `setup` if the tool has a config file.
+2. Wire it into the `hook` command in `bin/ai-office.mjs`, and to `setup` if the tool has a config file.
 3. Add cases to `test/protocol.test.mjs`.
 4. A hook must never block, prompt, or fail the host tool. Keep the 1.2 second timeout and always exit 0.

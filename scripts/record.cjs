@@ -6,8 +6,9 @@
 //   STORY=reel    FFMPEG=$(which ffmpeg) npx electron scripts/record.cjs marketing/reel.mp4
 //   STORY=trailer FFMPEG=$(which ffmpeg) npx electron scripts/record.cjs marketing/trailer.mp4
 //
-// Needs a running floor (agent-floor start). Uses the in-browser demo agents.
+// Needs a running floor (ai-office start). Uses the in-browser demo agents.
 const { app, BrowserWindow, nativeTheme } = require('electron');
+const { env } = require('../shared/env.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -27,7 +28,7 @@ const RW = F.cssW * F.scale;
 const RH = F.cssH * F.scale;
 const out = path.resolve(process.argv[2] || `marketing/${STORY}.mp4`);
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
-const PORT = Number(process.env.AGENT_FLOOR_PORT) || 4317;
+const PORT = Number(env('PORT')) || 4317;
 
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
@@ -96,7 +97,7 @@ const OVERLAY_CSS = `
 const card = (id, sub, extra = '') => `
   <div class="rc" id="${id}"><div class="inner">
     <div class="mark"><i></i><i></i><i></i><i></i></div>
-    <h1>Agent Floor</h1>
+    <h1>AI Office</h1>
     <div class="sub">${sub}</div>${extra}
   </div></div>`;
 
@@ -116,7 +117,7 @@ const night = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' }))`
 const betweenOffices = (dx, dy, dz) =>
   `(() => { __store.select(null); const a = __floor.rooms.get('checkout-redesign').center, b = __floor.rooms.get('auth-service').center; const t = a.clone().add(b).multiplyScalar(0.5); t.y = 0.8; const p = t.clone(); p.x += ${dx}; p.y += ${dy}; p.z += ${dz}; __floor.flyTo(t, p, null); })()`;
 const outro = (sub) =>
-  card('outro', sub, '<div class="cmd">npm i -g agent-floor</div><div class="url">github.com/SeongGi/ai-office</div>');
+  card('outro', sub, '<div class="cmd">npm i -g ai-office</div><div class="url">github.com/SeongGi/ai-office</div>');
 
 const STORIES = {
   // 25 seconds, vertical, fast cuts.

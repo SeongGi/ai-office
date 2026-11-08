@@ -1,6 +1,7 @@
-// Claude Code hooks -> Agent Floor events.
+// Claude Code hooks -> AI Office events.
 // Receives the JSON object Claude Code writes to a hook's stdin.
 // https://docs.claude.com/en/docs/claude-code/hooks
+import { env } from '../shared/env.cjs';
 import { describeTool, deviceName, pretty, shortId, shortToolName, slugKey, teamFromCwd } from './common.mjs';
 import { TOOL_FAIL_PREFIX } from '../shared/places.js';
 import { clipText, readTranscriptTail, readTranscriptTitle, shortTitle } from './transcript.mjs';
@@ -27,7 +28,7 @@ export function fromClaude(input, opts = {}) {
     agent: lead,
     team,
     source,
-    name: process.env.AGENT_FLOOR_NAME || opts.name || title || (source === 'codex' ? 'Codex' : 'Claude'),
+    name: env('NAME') || opts.name || title || (source === 'codex' ? 'Codex' : 'Claude'),
     role: 'Lead',
     ...(input.model ? { model: String(input.model) } : {}),
     ...(input.cwd ? { cwd: String(input.cwd) } : {}),

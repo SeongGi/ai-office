@@ -202,7 +202,7 @@ test('PostToolUseFailure: becomes an error status naming the tool, and the next 
 
 test('the hook installer lists PostToolUseFailure with a matcher', async () => {
   const { readFile } = await import('node:fs/promises');
-  const src = await readFile(new URL('../bin/agent-floor.mjs', import.meta.url), 'utf8');
+  const src = await readFile(new URL('../bin/ai-office.mjs', import.meta.url), 'utf8');
   assert.match(src, /'PostToolUseFailure'/);
   assert.match(src, /e === 'PostToolUseFailure'/);
 });

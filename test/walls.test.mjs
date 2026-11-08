@@ -13,7 +13,7 @@ let M;
 let dir;
 
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'agent-floor-walls-'));
+  dir = mkdtempSync(join(tmpdir(), 'ai-office-walls-'));
   const out = join(dir, 'routes.mjs');
   const bundle = await rolldown({ input: join(root, 'test/support/routes.entry.ts'), platform: 'node', logLevel: 'silent' });
   await bundle.write({ file: out, format: 'esm' });

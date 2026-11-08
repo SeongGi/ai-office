@@ -77,7 +77,7 @@ test('machine listener: 길 셋만 답하고 Bearer 토큰이 필수다', async 
     assert.equal((await fetch(`${m}/?token=tt`, { redirect: 'manual' })).status, 404, '로그인 화면도 쿠키 발급도 없다');
     assert.equal(floor.state.agents.a.id, 'a', '기계용 포트로 올린 이벤트가 화면에 들어간다');
   });
-  await assert.rejects(startServer({ port: 0, machinePort: 0, token: '', log: () => {}, seed: false }), /AGENT_FLOOR_TOKEN/);
+  await assert.rejects(startServer({ port: 0, machinePort: 0, token: '', log: () => {}, seed: false }), /AI_OFFICE_TOKEN/);
 });
 
 test('control: whoami와 닫기, 보내기 권한 표', async () => {

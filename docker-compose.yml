@@ -5,7 +5,7 @@
 services:
   app:
     build: .
-    image: agent-floor:latest
+    image: ai-office:latest
     restart: unless-stopped
     # ports 없음: 메인 포트는 compose 네트워크 안에서 auth 컨테이너만 부른다.
     expose:
@@ -13,14 +13,14 @@ services:
     ports:
       - "4318:4318"
     environment:
-      AGENT_FLOOR_HOST: 0.0.0.0
-      AGENT_FLOOR_MACHINE_PORT: "4318"
-      AGENT_FLOOR_TRUST_PROXY_EMAIL: "1"
-      AGENT_FLOOR_ADMINS: ${AGENT_FLOOR_ADMINS:?.env에 AGENT_FLOOR_ADMINS를 적어 주세요}
-      AGENT_FLOOR_TOKEN: ${AGENT_FLOOR_TOKEN:?.env에 AGENT_FLOOR_TOKEN을 적어 주세요}
-      AGENT_FLOOR_ROOM_MAX: ${AGENT_FLOOR_ROOM_MAX:-5}
-      AGENT_FLOOR_ALLOW_BYPASS_SEND: ${AGENT_FLOOR_ALLOW_BYPASS_SEND:-0}
-      AGENT_FLOOR_AUDIT: /data/audit.log
+      AI_OFFICE_HOST: 0.0.0.0
+      AI_OFFICE_MACHINE_PORT: "4318"
+      AI_OFFICE_TRUST_PROXY_EMAIL: "1"
+      AI_OFFICE_ADMINS: ${AI_OFFICE_ADMINS:?.env에 AI_OFFICE_ADMINS를 적어 주세요}
+      AI_OFFICE_TOKEN: ${AI_OFFICE_TOKEN:?.env에 AI_OFFICE_TOKEN을 적어 주세요}
+      AI_OFFICE_ROOM_MAX: ${AI_OFFICE_ROOM_MAX:-5}
+      AI_OFFICE_ALLOW_BYPASS_SEND: ${AI_OFFICE_ALLOW_BYPASS_SEND:-0}
+      AI_OFFICE_AUDIT: /data/audit.log
     volumes:
       - audit:/data
     healthcheck:
@@ -64,10 +64,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.demo
-    image: agent-floor-demo:latest
+    image: ai-office-demo:latest
     restart: unless-stopped
     ports:
-      - "${AGENT_FLOOR_DEMO_PORT:-8099}:80"
+      - "${AI_OFFICE_DEMO_PORT:-8099}:80"
 
 volumes:
   audit:

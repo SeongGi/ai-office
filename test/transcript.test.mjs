@@ -59,13 +59,13 @@ test('fromClaude name priority: env, opts, title, default; subagents never get t
   const file = tmpFile(jl({ type: 'ai-title', aiTitle: '제목' }));
   const base = { hook_event_name: 'SessionStart', session_id: 'sess1234', cwd: '/x/shop', transcript_path: file };
   assert.equal(fromClaude(base, { name: '옵션 이름' })[0].name, '옵션 이름');
-  const prev = process.env.AGENT_FLOOR_NAME;
-  process.env.AGENT_FLOOR_NAME = '환경 이름';
+  const prev = process.env.AI_OFFICE_NAME;
+  process.env.AI_OFFICE_NAME = '환경 이름';
   try {
     assert.equal(fromClaude(base, { name: '옵션 이름' })[0].name, '환경 이름');
   } finally {
-    if (prev === undefined) delete process.env.AGENT_FLOOR_NAME;
-    else process.env.AGENT_FLOOR_NAME = prev;
+    if (prev === undefined) delete process.env.AI_OFFICE_NAME;
+    else process.env.AI_OFFICE_NAME = prev;
   }
   assert.equal(fromClaude({ ...base, transcript_path: '/no/such.jsonl' })[0].name, 'Claude');
   assert.equal(fromClaude({ ...base, transcript_path: 42 })[0].name, 'Claude');

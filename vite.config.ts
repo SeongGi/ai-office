@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
+import { env } from './shared/env.cjs';
 
-const floor = `http://127.0.0.1:${process.env.AGENT_FLOOR_PORT || 4317}`;
+const floor = `http://127.0.0.1:${env('PORT') || 4317}`;
 
 export default defineConfig({
   server: {

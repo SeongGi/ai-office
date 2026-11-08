@@ -1,13 +1,14 @@
 // Capture marketing / README screenshots of the floor with Electron.
 //   npx electron scripts/capture.cjs [outDir]
-// Needs a running floor (agent-floor start). Uses the in-browser demo so the
+// Needs a running floor (ai-office start). Uses the in-browser demo so the
 // shots never show your real agents.
 const { app, BrowserWindow, nativeTheme } = require('electron');
+const { env } = require('../shared/env.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const out = path.resolve(process.argv[2] || 'docs/shots');
-const PORT = Number(process.env.AGENT_FLOOR_PORT) || 4317;
+const PORT = Number(env('PORT')) || 4317;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 app.whenReady().then(async () => {

@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 
 const procs = [
-  spawn(process.execPath, ['bin/agent-floor.mjs', 'start'], { stdio: 'inherit' }),
+  spawn(process.execPath, ['bin/ai-office.mjs', 'start'], { stdio: 'inherit' }),
   spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite'], { stdio: 'inherit', shell: process.platform === 'win32' }),
 ];
 

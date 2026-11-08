@@ -1,10 +1,11 @@
-// OpenAI Codex CLI -> Agent Floor events.
+// OpenAI Codex CLI -> AI Office events.
 //
 // Codex calls the program configured as `notify` in ~/.codex/config.toml with one
 // JSON argument when a turn completes. Newer Codex builds can also run hooks that
 // pass a Claude-style payload ({ hook_event_name, ... }) on stdin; those are routed
 // through the Claude mapper with source "codex".
 import { fromClaude } from './claude.mjs';
+import { env } from '../shared/env.cjs';
 import { shortId, teamFromCwd } from './common.mjs';
 
 export function fromCodex(input) {
@@ -16,7 +17,7 @@ export function fromCodex(input) {
     agent: `codex:${shortId(thread)}`,
     team: teamFromCwd(input.cwd),
     source: 'codex',
-    name: process.env.AGENT_FLOOR_NAME || 'Codex',
+    name: env('NAME') || 'Codex',
     role: 'Lead',
   };
 
