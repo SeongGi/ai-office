@@ -3,6 +3,7 @@ import '@fontsource-variable/geist-mono';
 import './styles.css';
 import { connect, isDemoRunning, startDemo } from './core/connection';
 import { store } from './core/store';
+import { readStored } from './core/storage';
 import { Hud } from './ui/hud';
 import type { FloorWorld } from './core/worldApi';
 import type { WorldCallbacks } from './world/World';
@@ -21,14 +22,10 @@ stage.className = 'stage';
 app.append(stage);
 
 // ---------------------------------------------------------------- theme
-const THEME_KEY = 'agent-floor:theme';
+const THEME_KEY = 'ai-office:theme';
 function savedTheme(): ThemeName | null {
-  try {
-    const v = localStorage.getItem(THEME_KEY);
-    return v === 'light' || v === 'dark' ? v : null;
-  } catch {
-    return null;
-  }
+  const v = readStored(THEME_KEY);
+  return v === 'light' || v === 'dark' ? v : null;
 }
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
 let theme: ThemeName = savedTheme() || (systemDark.matches ? 'dark' : 'light');

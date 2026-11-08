@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { env } from '../shared/env.cjs';
 
 export function shortId(value, n = 8) {
   return String(value || 'local').replace(/[^a-zA-Z0-9]/g, '').slice(0, n) || 'local';
@@ -11,13 +12,13 @@ export function slugKey(value) {
 /** Orca 작업 폴더(.../orca/workspaces/<프로젝트>/<브랜치>)는 브랜치가 아니라 프로젝트 방으로 묶는다. */
 const WORKSPACE_RE = /[\\/]orca[\\/]workspaces[\\/]([^\\/]+)(?:[\\/]|$)/;
 
-/** 기기 이름(AGENT_FLOOR_DEVICE). 있으면 팀 이름 앞에 붙어 기기별로 방이 갈린다. */
+/** 기기 이름(AI_OFFICE_DEVICE). 있으면 팀 이름 앞에 붙어 기기별로 방이 갈린다. */
 export function deviceName() {
-  return String(process.env.AGENT_FLOOR_DEVICE || '').trim();
+  return String(env('DEVICE') || '').trim();
 }
 
 export function teamFromCwd(cwd) {
-  const name = process.env.AGENT_FLOOR_TEAM || (!cwd ? '작업실' : (WORKSPACE_RE.exec(String(cwd))?.[1] ?? basename(cwd)));
+  const name = env('TEAM') || (!cwd ? '작업실' : (WORKSPACE_RE.exec(String(cwd))?.[1] ?? basename(cwd)));
   const device = deviceName();
   return device ? `${device} ${name}` : name;
 }

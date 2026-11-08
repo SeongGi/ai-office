@@ -1,4 +1,4 @@
-// Draws the Agent Floor mark (four rounded squares, one orange) as a PNG, in code,
+// Draws the AI Office mark (four rounded squares, one orange) as a PNG, in code,
 // so the desktop app ships without binary assets.
 const zlib = require('node:zlib');
 

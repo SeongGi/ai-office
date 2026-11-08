@@ -1,4 +1,4 @@
-// Agent Floor desktop app (Electron).
+// AI Office desktop app (Electron).
 //
 // Opens the floor in its own window, with no browser involved. The floor server
 // runs inside this process unless one is already running. The window can be
@@ -9,12 +9,13 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { markPng } = require('./icon.cjs');
 const { snooze } = require('./state.cjs');
+const { env } = require('../shared/env.cjs');
 
-const PORT = Number(process.env.AGENT_FLOOR_PORT) || 4317;
+const PORT = Number(env('PORT')) || 4317;
 const URL = `http://127.0.0.1:${PORT}/?app=1`;
 const startedByHook = process.argv.includes('--from-hook');
 
-app.setName('Agent Floor');
+app.setName('AI Office');
 
 if (!app.requestSingleInstanceLock()) {
   // Another window is already open; it will focus itself (see second-instance).
@@ -52,7 +53,7 @@ if (!app.requestSingleInstanceLock()) {
       height: 920,
       minWidth: 720,
       minHeight: 480,
-      title: 'Agent Floor',
+      title: 'AI Office',
       show: false,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0e13' : '#e7ebf0',
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -94,10 +95,10 @@ if (!app.requestSingleInstanceLock()) {
         : nativeImage.createFromBuffer(markPng(32));
     if (process.platform === 'darwin') image.setTemplateImage(true);
     tray = new Tray(image);
-    tray.setToolTip('Agent Floor');
+    tray.setToolTip('AI Office');
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Show Agent Floor', click: createWindow },
+        { label: 'Show AI Office', click: createWindow },
         { type: 'separator' },
         {
           label: 'Quit (pause auto-open for 6 hours)',

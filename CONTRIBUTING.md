@@ -18,9 +18,10 @@ Open http://localhost:5173. Add `?demo` to run the demo inside the browser witho
 | Path | What lives there |
 | --- | --- |
 | `shared/protocol.js` | Event validation and the reducer. Runs on the server and in the browser. Change it with care and add tests. |
-| `shared/demo-script.js` | The endless fake office used by `agent-floor demo` and the hosted demo. |
+| `shared/demo-script.js` | The endless fake office used by `ai-office demo` and the hosted demo. |
+| `shared/env.cjs` | Reads `AI_OFFICE_*` environment variables (falling back to the deprecated `AGENT_FLOOR_*` names) and picks the state folder. Read every setting through `env()`, never `process.env` directly. |
 | `server/index.mjs` | HTTP + SSE. No dependencies. |
-| `bin/agent-floor.mjs` | CLI: `start`, `setup`, `hook`, `emit`, `demo`. |
+| `bin/ai-office.mjs` | CLI: `start`, `setup`, `hook`, `emit`, `demo`. |
 | `adapters/` | Native hook payloads to floor events. Pure functions. |
 | `src/world/layout.ts` | The floor plan: lobby, corridor, office wings, amenities, desks and walking routes. Seats and wings are stable once assigned. |
 | `src/world/Building.ts` | The shell and shared spaces: walls, windows, doors, lobby, kitchen, meeting room, lounge, garden. |

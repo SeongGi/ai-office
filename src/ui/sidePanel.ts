@@ -4,12 +4,13 @@ import { buildRoster, buildRows, createTally, GUIDE_PLACES, liveRoomCounts, obse
 import { teamAccent } from '../world/palette';
 import { IDLE_WAIT_KO, STATUS_LABEL_KO } from './labels';
 import { catIcon } from './catIcons';
+import { readStored } from '../core/storage';
 
 /** 방마다 고양이 아이콘의 색을 달리해 한눈에 구분한다. */
 const ROOM_HUE: Record<GuidePlace, number> = { library: 28, server: 215, search: 160, desk: 330 };
 
-const STORE_KEY = 'agent-floor.sidePanel';
-const TIMELINE_KEY = 'agent-floor.sidePanel.timeline';
+const STORE_KEY = 'ai-office.sidePanel';
+const TIMELINE_KEY = 'ai-office.sidePanel.timeline';
 const NARROW_PX = 900;
 
 export const PANEL_KO = {
@@ -30,21 +31,14 @@ function esc(s: string) {
 }
 
 function loadTimelineOpen(): boolean {
-  try {
-    return localStorage.getItem(TIMELINE_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return readStored(TIMELINE_KEY) === '1';
 }
 
 function loadOpen(): boolean {
-  try {
-    const v = localStorage.getItem(STORE_KEY);
-    if (v === '1') return true;
-    if (v === '0') return false;
-  } catch {
-    // 저장소를 못 읽으면 화면 너비로 정한다.
-  }
+  // 저장소를 못 읽거나 값이 없으면 화면 너비로 정한다.
+  const v = readStored(STORE_KEY);
+  if (v === '1') return true;
+  if (v === '0') return false;
   return window.innerWidth >= NARROW_PX;
 }
 

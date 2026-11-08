@@ -13,7 +13,7 @@ let M;
 let dir;
 
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'agent-floor-ui-'));
+  dir = mkdtempSync(join(tmpdir(), 'ai-office-ui-'));
   const out = join(dir, 'ui.mjs');
   const bundle = await rolldown({ input: join(root, 'test/support/ui.entry.ts'), platform: 'node', logLevel: 'silent' });
   await bundle.write({ file: out, format: 'esm' });

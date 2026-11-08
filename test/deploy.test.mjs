@@ -77,14 +77,14 @@ test('token auth: 401, bearer, cookie, ?token= 리다이렉트, /health 열림',
 });
 
 test('token auth: 토큰 없이 외부 주소로는 시작하지 않는다', async () => {
-  await assert.rejects(startServer({ port: 0, host: '0.0.0.0', token: '', log: () => {}, seed: false }), /AGENT_FLOOR_TOKEN/);
+  await assert.rejects(startServer({ port: 0, host: '0.0.0.0', token: '', log: () => {}, seed: false }), /AI_OFFICE_TOKEN/);
 });
 
 test('device prefix: 팀 이름과 id에 기기 이름이 붙고 한글 slug가 남는다', async () => {
-  const prev = process.env.AGENT_FLOOR_DEVICE;
-  const prevTeam = process.env.AGENT_FLOOR_TEAM;
-  delete process.env.AGENT_FLOOR_TEAM;
-  process.env.AGENT_FLOOR_DEVICE = '서버기기';
+  const prev = process.env.AI_OFFICE_DEVICE;
+  const prevTeam = process.env.AI_OFFICE_TEAM;
+  delete process.env.AI_OFFICE_TEAM;
+  process.env.AI_OFFICE_DEVICE = '서버기기';
   try {
     const events = fromClaude({ hook_event_name: 'SessionStart', session_id: 's1', cwd: '/x/ra-portal' });
     assert.equal(events[0].team, '서버기기 ra-portal');
@@ -102,9 +102,9 @@ test('device prefix: 팀 이름과 id에 기기 이름이 붙고 한글 slug가 
       assert.equal(teams['서버기기-ra-portal-2'].name, '서버기기 ra-portal 2');
     });
   } finally {
-    if (prev === undefined) delete process.env.AGENT_FLOOR_DEVICE;
-    else process.env.AGENT_FLOOR_DEVICE = prev;
-    if (prevTeam !== undefined) process.env.AGENT_FLOOR_TEAM = prevTeam;
+    if (prev === undefined) delete process.env.AI_OFFICE_DEVICE;
+    else process.env.AI_OFFICE_DEVICE = prev;
+    if (prevTeam !== undefined) process.env.AI_OFFICE_TEAM = prevTeam;
   }
 });
 
@@ -197,8 +197,8 @@ test('seed: 열린 세션의 터미널 핸들을 읽어 join에 싣는다', asyn
 });
 
 test('seed: 기기 이름이 있으면 join에 device를 싣는다', () => {
-  const prev = process.env.AGENT_FLOOR_DEVICE;
-  process.env.AGENT_FLOOR_DEVICE = '맥북';
+  const prev = process.env.AI_OFFICE_DEVICE;
+  process.env.AI_OFFICE_DEVICE = '맥북';
   try {
     const dir = mkdtempSync(join(tmpdir(), 'af-seed2-'));
     mkdirSync(join(dir, '-x-p'));
@@ -206,7 +206,7 @@ test('seed: 기기 이름이 있으면 join에 device를 싣는다', () => {
     const [ev] = seedEvents({ root: dir, sessionsDir: join(dir, 'none') });
     assert.equal(ev.device, '맥북');
   } finally {
-    if (prev === undefined) delete process.env.AGENT_FLOOR_DEVICE;
-    else process.env.AGENT_FLOOR_DEVICE = prev;
+    if (prev === undefined) delete process.env.AI_OFFICE_DEVICE;
+    else process.env.AI_OFFICE_DEVICE = prev;
   }
 });

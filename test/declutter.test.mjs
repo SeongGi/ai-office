@@ -12,7 +12,7 @@ let M;
 let dir;
 
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'agent-floor-declutter-'));
+  dir = mkdtempSync(join(tmpdir(), 'ai-office-declutter-'));
   const out = join(dir, 'declutter.mjs');
   const bundle = await rolldown({ input: join(root, 'test/support/declutter.entry.ts'), platform: 'node', logLevel: 'silent' });
   await bundle.write({ file: out, format: 'esm' });

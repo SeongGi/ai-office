@@ -1,18 +1,15 @@
 import './world2d.css';
+import { readStored } from '../core/storage';
 
 export type ViewName = '2d' | '3d';
-const KEY = 'agent-floor:view';
+const KEY = 'ai-office:view';
 
 /** ?view=2d|3d wins, then the saved choice, then 2D. */
 export function chosenView(): ViewName {
   const q = new URLSearchParams(location.search).get('view');
   if (q === '2d' || q === '3d') return q;
-  try {
-    const v = localStorage.getItem(KEY);
-    if (v === '2d' || v === '3d') return v;
-  } catch {
-    /* storage unavailable */
-  }
+  const v = readStored(KEY);
+  if (v === '2d' || v === '3d') return v;
   return '2d';
 }
 

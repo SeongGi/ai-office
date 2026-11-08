@@ -1,9 +1,10 @@
-// Small bits of state shared by the desktop app and the hooks, kept in ~/.agent-floor.
+// Small bits of state shared by the desktop app and the hooks, kept in ~/.ai-office
+// (새 폴더가 없고 옛 이름 폴더만 있으면 그것을 계속 쓴다. 규칙은 shared/env.cjs에 있다).
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { stateDir } = require('../shared/env.cjs');
 
-const DIR = process.env.AGENT_FLOOR_HOME || path.join(os.homedir(), '.agent-floor');
+const DIR = stateDir();
 const SNOOZE = path.join(DIR, 'snoozed-until');
 const LOCK = path.join(DIR, 'launch.lock');
 

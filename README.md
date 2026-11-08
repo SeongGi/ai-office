@@ -16,24 +16,26 @@ A 3D view (three.js) from the original project is still included. Press the **2D
 
 ## Quick start
 
-AI Office is not published to npm, so install it from source (Node 20 or newer). The command line tool is still called `agent-floor`, after the original project it grew from, and so are the `AGENT_FLOOR_*` variables:
+AI Office is not published to npm, so install it from source (Node 20 or newer):
 
 ```bash
 git clone https://github.com/SeongGi/ai-office
 cd ai-office
 npm install
 npm run build        # builds the web app into dist/
-npm link             # puts the `agent-floor` command on your PATH
-agent-floor setup claude --write
+npm link             # puts the `ai-office` command on your PATH
+ai-office setup claude --write
 ```
 
-Do not run `npm i -g agent-floor`: that name belongs to somebody else's package, if it exists at all. Without `npm link`, replace `agent-floor` in every command below with `node /path/to/ai-office/bin/agent-floor.mjs`.
+Do not run `npm i -g ai-office`: AI Office is not published to npm, so install it from source as shown above. Without `npm link`, replace `ai-office` in every command below with `node /path/to/ai-office/bin/ai-office.mjs`.
 
-After that, the next time a Claude Code session starts, AI Office opens by itself in its own desktop window (no browser). Close the window and it keeps listening from the menu bar; use **Quit (pause auto-open for 6 hours)** in the menu bar icon when you want quiet. Run `agent-floor` any time to open it yourself.
+Compatibility: the old `AGENT_FLOOR_*` environment variables and the `~/.agent-floor` folder are still read for now (deprecated). When both names are set, the `AI_OFFICE_*` one wins; `~/.agent-floor` is only used when `~/.ai-office` does not exist. Hooks installed by an older version are replaced when you run `ai-office setup <claude|cursor> --write` again.
+
+After that, the next time a Claude Code session starts, AI Office opens by itself in its own desktop window (no browser). Close the window and it keeps listening from the menu bar; use **Quit (pause auto-open for 6 hours)** in the menu bar icon when you want quiet. Run `ai-office` any time to open it yourself.
 
 Start a Claude Code session in any project. A cat walks into a room named after the project folder, sits down, and starts working. When it spawns a subagent, a new teammate walks in, gets briefed by letter, works at its own desk, and reports back.
 
-No agents yet? Click **Watch demo**, or run `agent-floor demo` in a second terminal.
+No agents yet? Click **Watch demo**, or run `ai-office demo` in a second terminal.
 
 ## What you see
 
@@ -60,8 +62,8 @@ A side panel lists every agent with what it is doing now, and four room cards co
 ### Claude Code
 
 ```bash
-agent-floor setup claude --write     # merges hooks into ~/.claude/settings.json (backup kept)
-agent-floor setup claude --project   # prints a snippet for .claude/settings.json in this repo
+ai-office setup claude --write     # merges hooks into ~/.claude/settings.json (backup kept)
+ai-office setup claude --project   # prints a snippet for .claude/settings.json in this repo
 ```
 
 Uses `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop`, `SubagentStop`, `PreCompact` and `SessionEnd`. Subagents spawned with the Task tool get their own desks and their tool calls show up on their own screens.
@@ -69,16 +71,16 @@ Uses `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolU
 ### Codex
 
 ```bash
-agent-floor setup codex
+ai-office setup codex
 ```
 
-Prints the `notify` line for `~/.codex/config.toml`. Codex reports once per finished turn. If your Codex build supports Claude-style hooks, point them at `agent-floor hook codex` and you get live tool activity too.
+Prints the `notify` line for `~/.codex/config.toml`. Codex reports once per finished turn. If your Codex build supports Claude-style hooks, point them at `ai-office hook codex` and you get live tool activity too.
 
 ### Cursor
 
 ```bash
-agent-floor setup cursor --write     # ~/.cursor/hooks.json
-agent-floor setup cursor --project   # .cursor/hooks.json in this repo
+ai-office setup cursor --write     # ~/.cursor/hooks.json
+ai-office setup cursor --project   # .cursor/hooks.json in this repo
 ```
 
 Only observing hooks are installed. AI Office never answers a permission prompt for you.
@@ -96,8 +98,8 @@ curl -X POST localhost:4317/events \
 Or from a shell script:
 
 ```bash
-agent-floor emit --agent bot-1 --team Payments --status working --activity "Running tests"
-agent-floor emit --agent bot-1 --to bot-2 --text "Tests are green"
+ai-office emit --agent bot-1 --team Payments --status working --activity "Running tests"
+ai-office emit --agent bot-1 --to bot-2 --text "Tests are green"
 ```
 
 The full event format is in [docs/protocol.md](docs/protocol.md). More integration notes, including LangGraph and CrewAI style frameworks, are in [docs/integrations.md](docs/integrations.md).
@@ -106,16 +108,16 @@ The full event format is in [docs/protocol.md](docs/protocol.md). More integrati
 
 | Variable | Default | Used by |
 | --- | --- | --- |
-| `AGENT_FLOOR_PORT` | `4317` | server, hooks |
-| `AGENT_FLOOR_HOST` | `127.0.0.1` | server |
-| `AGENT_FLOOR_URL` | `http://127.0.0.1:4317` | hooks, `emit`, `demo` |
-| `AGENT_FLOOR_TEAM` | project folder name | hooks: put this session in a named room |
-| `AGENT_FLOOR_NAME` | `Claude`, `Codex`, `Cursor` | hooks: the lead's display name |
-| `AGENT_FLOOR_AUTOLAUNCH` | `1` | set to `0` so hooks never open the app |
-| `AGENT_FLOOR_SEED` | `1` | set to `0` so the server does not read the Claude Code sessions already open on this machine |
-| `AGENT_FLOOR_TOKEN` | none | if set on the server, every request must carry it; hooks and `emit` send it as a bearer token (see [docs/deploy-mini.md](docs/deploy-mini.md), written in Korean) |
+| `AI_OFFICE_PORT` | `4317` | server, hooks |
+| `AI_OFFICE_HOST` | `127.0.0.1` | server |
+| `AI_OFFICE_URL` | `http://127.0.0.1:4317` | hooks, `emit`, `demo` |
+| `AI_OFFICE_TEAM` | project folder name | hooks: put this session in a named room |
+| `AI_OFFICE_NAME` | `Claude`, `Codex`, `Cursor` | hooks: the lead's display name |
+| `AI_OFFICE_AUTOLAUNCH` | `1` | set to `0` so hooks never open the app |
+| `AI_OFFICE_SEED` | `1` | set to `0` so the server does not read the Claude Code sessions already open on this machine |
+| `AI_OFFICE_TOKEN` | none | if set on the server, every request must carry it; hooks and `emit` send it as a bearer token (see [docs/deploy-mini.md](docs/deploy-mini.md), written in Korean) |
 
-Group several repos into one room by giving them the same `AGENT_FLOOR_TEAM`.
+Group several repos into one room by giving them the same `AI_OFFICE_TEAM`.
 
 ## Privacy and safety
 
@@ -123,21 +125,21 @@ Group several repos into one room by giving them the same `AGENT_FLOOR_TEAM`.
 - `POST` requires `Content-Type: application/json`, so web pages cannot fire simple cross-site requests at it. CORS is limited to localhost origins.
 - Hooks time out after 1.2 seconds, swallow every error and always exit 0. If the floor is down, your agents never notice.
 - Agent activity is kept in memory only and is not sent anywhere else. Activity text is clipped to 280 characters. The only files the server writes are the audit log, custom agent names and terminal routes under `data/` (git-ignored), and only when you use the remote-control features (closing a session or sending it an instruction).
-- On start the server also reads which Claude Code sessions are already open on this machine, so their project names show up in the office right away. Set `AGENT_FLOOR_SEED=0` to turn that off.
+- On start the server also reads which Claude Code sessions are already open on this machine, so their project names show up in the office right away. Set `AI_OFFICE_SEED=0` to turn that off.
 
 ## The desktop app
 
-`agent-floor` (or the first hook event when nothing is running) starts the floor and opens it as an Electron window. If Electron is not available, it falls back to a Chrome or Edge app window, and then to your default browser. Only one copy ever runs: parallel subagents share a launch lock. `agent-floor start` runs just the server, with no window, if you prefer a browser tab at http://localhost:4317.
+`ai-office` (or the first hook event when nothing is running) starts the floor and opens it as an Electron window. If Electron is not available, it falls back to a Chrome or Edge app window, and then to your default browser. Only one copy ever runs: parallel subagents share a launch lock. `ai-office start` runs just the server, with no window, if you prefer a browser tab at http://localhost:4317.
 
 ## Performance
 
-The 2D floor is drawn on one canvas. Add `?stats` to the URL (or run `agent-floor demo --agents 60` for a stress test) to see frame time.
+The 2D floor is drawn on one canvas. Add `?stats` to the URL (or run `ai-office demo --agents 60` for a stress test) to see frame time.
 
 ## How it works
 
 ```
 Claude Code / Codex / Cursor hooks ──┐
-agent-floor emit, curl, your code ───┼──► POST /events ──► reducer ──► GET /stream (SSE) ──► browser
+ai-office emit, curl, your code ─────┼──► POST /events ──► reducer ──► GET /stream (SSE) ──► browser
                                      │                       │                                │
                                      └─ adapters/*.mjs       └─ shared/protocol.js ◄──────────┘
                                         map native payloads     same reducer runs on both sides

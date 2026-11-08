@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// agent-floor CLI
+// ai-office CLI
 //
-//   agent-floor [start] [--port 4317] [--open]   run the floor
-//   agent-floor hook <claude|codex|cursor>      used by agent hooks (reads stdin / argv)
-//   agent-floor emit --agent id --status working --activity "..."  [--team x] [--to id --text "..."]
-//   agent-floor setup <claude|codex|cursor> [--write] [--project]
-//   agent-floor meeting start [--all] [topic] | meeting end
-//   agent-floor seed                             이 기기의 열린 Claude 세션을 서버에 올린다
-//   agent-floor close-agent                      서버가 맡긴 닫기와 지시 요청을 이 기기에서 실행한다(AGENT_FLOOR_DEVICE 필수)
-//   agent-floor demo                             push a scripted demo into a running floor
+//   ai-office [start] [--port 4317] [--open]   run the floor
+//   ai-office hook <claude|codex|cursor>      used by agent hooks (reads stdin / argv)
+//   ai-office emit --agent id --status working --activity "..."  [--team x] [--to id --text "..."]
+//   ai-office setup <claude|codex|cursor> [--write] [--project]
+//   ai-office meeting start [--all] [topic] | meeting end
+//   ai-office seed                             이 기기의 열린 Claude 세션을 서버에 올린다
+//   ai-office close-agent                      서버가 맡긴 닫기와 지시 요청을 이 기기에서 실행한다(AI_OFFICE_DEVICE 필수)
+//   ai-office demo                             push a scripted demo into a running floor
 import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -16,14 +16,15 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { env, isOwnHook } from '../shared/env.cjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SELF = resolve(here, 'agent-floor.mjs');
-const PORT = Number(process.env.AGENT_FLOOR_PORT) || 4317;
-const URL_BASE = (process.env.AGENT_FLOOR_URL || `http://127.0.0.1:${PORT}`).replace(/\/$/, '');
+const SELF = resolve(here, 'ai-office.mjs');
+const PORT = Number(env('PORT')) || 4317;
+const URL_BASE = (env('URL') || `http://127.0.0.1:${PORT}`).replace(/\/$/, '');
 const IS_LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(URL_BASE);
 const require = createRequire(import.meta.url);
-const TOKEN = process.env.AGENT_FLOOR_TOKEN || '';
+const TOKEN = env('TOKEN') || '';
 const authHeaders = (extra = {}) => (TOKEN ? { ...extra, Authorization: `Bearer ${TOKEN}` } : extra);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -91,7 +92,7 @@ async function healthy() {
 /**
  * Send events; if the floor is not running, open the desktop app and resend.
  * Guarded so it never spams windows: one launcher at a time (lock file), a
- * snooze after "Quit", and AGENT_FLOOR_AUTOLAUNCH=0 to turn it off.
+ * snooze after "Quit", and AI_OFFICE_AUTOLAUNCH=0 to turn it off.
  */
 async function postOrLaunch(events) {
   if (!events.length) return;
@@ -101,7 +102,7 @@ async function postOrLaunch(events) {
   } catch {
     /* not running (or slow); fall through */
   }
-  if (!IS_LOCAL || process.env.AGENT_FLOOR_AUTOLAUNCH === '0') return;
+  if (!IS_LOCAL || env('AUTOLAUNCH') === '0') return;
   const { isSnoozed, takeLaunchLock } = require('../desktop/state.cjs');
   if (isSnoozed()) return;
   if (takeLaunchLock()) await openApp({ fromHook: true });
@@ -171,10 +172,10 @@ async function app(args) {
   const how = await openApp({ browser: Boolean(f.browser) });
   console.log(
     how === 'desktop'
-      ? 'Agent Floor is opening in its own window. It keeps running in the menu bar when you close it.'
+      ? 'AI Office is opening in its own window. It keeps running in the menu bar when you close it.'
       : how === 'app-window'
-        ? 'Agent Floor is opening in an app window. Install Electron (npm i -g electron) for the full desktop app.'
-        : `Agent Floor is running at http://127.0.0.1:${PORT}`,
+        ? 'AI Office is opening in an app window. Install Electron (npm i -g electron) for the full desktop app.'
+        : `AI Office is running at http://127.0.0.1:${PORT}`,
   );
 }
 
@@ -210,7 +211,7 @@ async function hook(kind) {
 async function emit(args) {
   const f = flags(args);
   if (!f.agent) {
-    console.error('Usage: agent-floor emit --agent <id> [--type status] [--status working] [--activity "..."] [--team name] [--role role] [--to id --text "..."]');
+    console.error('Usage: ai-office emit --agent <id> [--type status] [--status working] [--activity "..."] [--team name] [--role role] [--to id --text "..."]');
     process.exit(1);
   }
   const ev = {
@@ -241,7 +242,7 @@ async function meeting(args) {
   const f = flags(args);
   const action = f._[0];
   if (action !== 'start' && action !== 'end') {
-    console.error('사용법: agent-floor meeting start [--all] [주제] | agent-floor meeting end');
+    console.error('사용법: ai-office meeting start [--all] [주제] | ai-office meeting end');
     process.exit(1);
   }
   // A bare flag swallows the next word in flags(); read the topic from raw args instead.
@@ -264,7 +265,7 @@ async function meeting(args) {
 // When run through `npx`, this file lives in a throwaway cache, so point hooks
 // at the package name instead of the file path.
 const viaNpx = /[\\/]_npx[\\/]/.test(SELF);
-const hookCmd = (kind) => (viaNpx ? `npx -y agent-floor hook ${kind}` : `node "${SELF}" hook ${kind}`);
+const hookCmd = (kind) => (viaNpx ? `npx -y ai-office hook ${kind}` : `node "${SELF}" hook ${kind}`);
 
 function claudeHooks() {
   const command = hookCmd('claude');
@@ -297,9 +298,8 @@ async function backupAndWrite(path, data) {
   await writeFile(path, JSON.stringify(data, null, 2) + '\n');
 }
 
-function isOurs(entry) {
-  return JSON.stringify(entry).includes('agent-floor');
-}
+// 옛 이름으로 설치된 항목과 새 항목을 둘 다 알아본다(규칙은 shared/env.cjs).
+const isOurs = isOwnHook;
 
 async function setup(args) {
   const f = flags(args);
@@ -319,7 +319,7 @@ async function setup(args) {
       settings.hooks[event] = [...kept, ...entries];
     }
     await backupAndWrite(path, settings);
-    console.log(`Merged Agent Floor hooks into ${path} (backup at ${path}.bak). Agent Floor will open by itself the next time a Claude Code session starts.`);
+    console.log(`Merged AI Office hooks into ${path} (backup at ${path}.bak). AI Office will open by itself the next time a Claude Code session starts.`);
   } else if (kind === 'cursor') {
     const config = cursorHooks();
     const path = f.project ? resolve('.cursor/hooks.json') : join(homedir(), '.cursor', 'hooks.json');
@@ -336,14 +336,14 @@ async function setup(args) {
       current.hooks[event] = [...kept, ...entries];
     }
     await backupAndWrite(path, current);
-    console.log(`Merged Agent Floor hooks into ${path} (backup at ${path}.bak). Agent Floor will open by itself the next time a Cursor agent runs.`);
+    console.log(`Merged AI Office hooks into ${path} (backup at ${path}.bak). AI Office will open by itself the next time a Cursor agent runs.`);
   } else if (kind === 'codex') {
     const path = join(homedir(), '.codex', 'config.toml');
     console.log(`Add this line near the top of ${path}:\n`);
-    console.log(viaNpx ? 'notify = ["npx", "-y", "agent-floor", "hook", "codex"]\n' : `notify = ["node", "${SELF}", "hook", "codex"]\n`);
+    console.log(viaNpx ? 'notify = ["npx", "-y", "ai-office", "hook", "codex"]\n' : `notify = ["node", "${SELF}", "hook", "codex"]\n`);
     console.log('Codex allows one notify program. If you already have one, chain them in a small script.');
   } else {
-    console.log('Usage: agent-floor setup <claude|codex|cursor> [--write] [--project]');
+    console.log('Usage: ai-office setup <claude|codex|cursor> [--write] [--project]');
     process.exit(1);
   }
 }
@@ -357,7 +357,7 @@ async function start(args) {
   try {
     await startServer({ port, host });
     if (f.open) await openApp({ browser: Boolean(f.browser) });
-    console.log('Connect an agent:  agent-floor setup claude | codex | cursor');
+    console.log('Connect an agent:  ai-office setup claude | codex | cursor');
     console.log('Press Ctrl+C to stop.');
   } catch (err) {
     console.error(err.code === 'EADDRINUSE' ? `Port ${port || 4317} is already in use. Try --port 4318.` : err.message);
@@ -382,7 +382,7 @@ async function seed() {
         body: JSON.stringify(events.slice(i, i + 200)),
         signal: AbortSignal.timeout(8000),
       });
-      if (res.status === 401) throw new Error('토큰이 맞지 않아요(AGENT_FLOOR_TOKEN)');
+      if (res.status === 401) throw new Error('토큰이 맞지 않아요(AI_OFFICE_TOKEN)');
       if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
       accepted += (await res.json()).accepted || 0;
     }
@@ -395,9 +395,9 @@ async function seed() {
 
 // ---------------------------------------------------------------- close-agent
 async function closeAgent() {
-  const device = String(process.env.AGENT_FLOOR_DEVICE || '').trim();
+  const device = String(env('DEVICE') || '').trim();
   if (!device) {
-    console.error('AGENT_FLOOR_DEVICE가 필요해요(이 기기 이름).');
+    console.error('AI_OFFICE_DEVICE가 필요해요(이 기기 이름).');
     process.exit(1);
   }
   const { closeOrcaTerminal } = await import('../adapters/orca-close.mjs');
@@ -462,7 +462,7 @@ async function demo(args) {
     } catch {
       // A slow moment is fine; give up only if the floor is really gone.
       if (++failures >= 5) {
-        console.error(`Could not reach ${URL_BASE}. Start the floor first: agent-floor start`);
+        console.error(`Could not reach ${URL_BASE}. Start the floor first: ai-office start`);
         process.exit(1);
       }
     }
@@ -472,24 +472,24 @@ async function demo(args) {
 
 const commands = { app, start, hook: () => hook(rest[0]), emit, setup, demo, meeting, seed, 'close-agent': closeAgent };
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
-  console.log(`agent-floor: a live 3D office for your coding agents
+  console.log(`ai-office: a live 3D office for your coding agents
 
-  agent-floor                              open the desktop app (starts the floor too)
-  agent-floor start [--port 4317] [--open] run the floor without a window
-  agent-floor setup <claude|codex|cursor> [--write] [--project]
-  agent-floor emit --agent <id> --status working --activity "Writing tests" [--team checkout]
-  agent-floor meeting start [--all] [주제]  전체 회의 시작 (meeting end 로 끝냄)
-  agent-floor seed                         이 기기의 열린 Claude 세션을 서버에 올림
-  agent-floor close-agent                  서버가 맡긴 닫기와 지시 요청을 이 기기에서 실행
-  agent-floor demo [--agents 60]          (stress test with many agents)
-  agent-floor hook <claude|codex|cursor>    (called by agent hooks)
+  ai-office                              open the desktop app (starts the floor too)
+  ai-office start [--port 4317] [--open] run the floor without a window
+  ai-office setup <claude|codex|cursor> [--write] [--project]
+  ai-office emit --agent <id> --status working --activity "Writing tests" [--team checkout]
+  ai-office meeting start [--all] [주제]  전체 회의 시작 (meeting end 로 끝냄)
+  ai-office seed                         이 기기의 열린 Claude 세션을 서버에 올림
+  ai-office close-agent                  서버가 맡긴 닫기와 지시 요청을 이 기기에서 실행
+  ai-office demo [--agents 60]          (stress test with many agents)
+  ai-office hook <claude|codex|cursor>    (called by agent hooks)
 
-Environment: AGENT_FLOOR_URL, AGENT_FLOOR_TOKEN, AGENT_FLOOR_DEVICE, AGENT_FLOOR_PORT, AGENT_FLOOR_TEAM, AGENT_FLOOR_NAME,\n             AGENT_FLOOR_AUTOLAUNCH=0 (hooks never open the app)`);
+Environment: AI_OFFICE_URL, AI_OFFICE_TOKEN, AI_OFFICE_DEVICE, AI_OFFICE_PORT, AI_OFFICE_TEAM, AI_OFFICE_NAME,\n             AI_OFFICE_AUTOLAUNCH=0 (hooks never open the app)`);
 } else if (commands[cmd]) {
   await commands[cmd](rest);
 } else if (cmd.startsWith('--')) {
   await start([cmd, ...rest]);
 } else {
-  console.error(`Unknown command "${cmd}". Try agent-floor --help`);
+  console.error(`Unknown command "${cmd}". Try ai-office --help`);
   process.exit(1);
 }

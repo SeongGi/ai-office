@@ -1,4 +1,4 @@
-// Agent Floor event protocol + reducer.
+// AI Office event protocol + reducer.
 // Shared verbatim by the Node server and the browser, so both always agree on world state.
 // Plain ESM JavaScript with zero dependencies. Types live in protocol.d.ts.
 

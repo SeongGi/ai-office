@@ -1,4 +1,4 @@
-# Agent Floor 서버 이미지. 웹앱은 이미지 안에서 따로 빌드한다.
+# AI Office 서버 이미지. 웹앱은 이미지 안에서 따로 빌드한다.
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -9,10 +9,10 @@ RUN npm run build
 
 FROM node:22-alpine
 ENV NODE_ENV=production \
-    AGENT_FLOOR_HOST=0.0.0.0 \
-    AGENT_FLOOR_SEED=0 \
-    AGENT_FLOOR_AUTOLAUNCH=0 \
-    AGENT_FLOOR_DEVICE=서버
+    AI_OFFICE_HOST=0.0.0.0 \
+    AI_OFFICE_SEED=0 \
+    AI_OFFICE_AUTOLAUNCH=0 \
+    AI_OFFICE_DEVICE=서버
 WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY server ./server

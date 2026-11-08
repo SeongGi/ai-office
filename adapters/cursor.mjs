@@ -1,8 +1,9 @@
-// Cursor agent hooks -> Agent Floor events.
+// Cursor agent hooks -> AI Office events.
 // Cursor writes a JSON payload to the hook's stdin. We only subscribe to hooks
-// that observe (after*, stop, beforeSubmitPrompt) so Agent Floor can never change
+// that observe (after*, stop, beforeSubmitPrompt) so AI Office can never change
 // a permission decision. See docs/integrations.md for the hooks.json snippet.
 import { basename } from 'node:path';
+import { env } from '../shared/env.cjs';
 import { shortId, teamFromCwd } from './common.mjs';
 
 export function fromCursor(input) {
@@ -12,7 +13,7 @@ export function fromCursor(input) {
     agent: `cursor:${shortId(input.conversation_id)}`,
     team: teamFromCwd(root),
     source: 'cursor',
-    name: process.env.AGENT_FLOOR_NAME || 'Cursor',
+    name: env('NAME') || 'Cursor',
     role: 'Lead',
   };
   const f = (p) => (p ? basename(String(p)) : '파일');

@@ -1,4 +1,4 @@
-// A believable, endless stream of agent activity. Used by `agent-floor demo`
+// A believable, endless stream of agent activity. Used by `ai-office demo`
 // and by the web app when no server is reachable (for example the hosted demo).
 
 const TEAMS = [

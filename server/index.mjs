@@ -1,4 +1,4 @@
-// Agent Floor server. Zero dependencies.
+// AI Office server. Zero dependencies.
 //
 //   POST /events        one event or an array of events (see docs/protocol.md)
 //   GET  /stream        Server-Sent Events: a `snapshot`, then `event` + `effects`
@@ -10,8 +10,8 @@
 //   GET  /close-queue   ?device=<이름>: 다른 기기가 소유한 세션의 닫기와 지시 요청을 꺼내 간다(close-agent가 부른다)
 //   POST /reset         clear the floor
 //
-// AGENT_FLOOR_TOKEN이 있으면 /health와 OPTIONS 말고는 전부 토큰이 필요하다.
-// AGENT_FLOOR_MACHINE_PORT가 있으면 기계용 두 번째 포트가 열린다. POST /events, GET /close-queue, GET /health만 답하고
+// AI_OFFICE_TOKEN이 있으면 /health와 OPTIONS 말고는 전부 토큰이 필요하다.
+// AI_OFFICE_MACHINE_PORT가 있으면 기계용 두 번째 포트가 열린다. POST /events, GET /close-queue, GET /health만 답하고
 // Bearer 토큰이 필수이며 제어 권한은 없다. 사람은 구글 로그인 프록시(oauth2-proxy)를 거친 메인 포트로만 들어온다.
 //   GET  /*             the built web app (dist/)
 import { createServer } from 'node:http';
@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { env } from '../shared/env.cjs';
 import { TERMINAL_HANDLE_RE } from '../adapters/common.mjs';
 import { seedEvents } from '../adapters/seed.mjs';
 import { closeOrcaTerminal } from '../adapters/orca-close.mjs';
@@ -44,7 +45,7 @@ const listOf = (v) =>
     .map((x) => String(x).trim().toLowerCase())
     .filter(Boolean);
 // 한 방에 앉는 메인 세션 수. 넘치면 같은 팀의 다음 방("<팀> 2")을 연다.
-const ROOM_MAX = Number(process.env.AGENT_FLOOR_ROOM_MAX) || 5;
+const ROOM_MAX = Number(env('ROOM_MAX')) || 5;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -59,26 +60,26 @@ const MIME = {
 };
 
 export function startServer({
-  port = Number(process.env.AGENT_FLOOR_PORT) || 4317,
-  host = process.env.AGENT_FLOOR_HOST || '127.0.0.1',
+  port = Number(env('PORT')) || 4317,
+  host = env('HOST') || '127.0.0.1',
   staticDir = resolve(here, '../dist'),
   log = console.log,
-  token = process.env.AGENT_FLOOR_TOKEN || '',
-  device = process.env.AGENT_FLOOR_DEVICE || '',
-  seed = process.env.AGENT_FLOOR_SEED !== '0',
+  token = env('TOKEN') || '',
+  device = env('DEVICE') || '',
+  seed = env('SEED') !== '0',
   execFileImpl,
   // 기계용 두 번째 포트. 비워 두면 열지 않는다(0은 아무 빈 포트).
-  machinePort = process.env.AGENT_FLOOR_MACHINE_PORT ? Number(process.env.AGENT_FLOOR_MACHINE_PORT) : null,
+  machinePort = env('MACHINE_PORT') ? Number(env('MACHINE_PORT')) : null,
   // 프록시가 붙여 주는 x-auth-request-email 헤더를 사람 신원으로 믿을지.
-  trustProxyEmail = process.env.AGENT_FLOOR_TRUST_PROXY_EMAIL === '1',
+  trustProxyEmail = env('TRUST_PROXY_EMAIL') === '1',
   // 제어 권한(닫기, 지시 보내기)을 가진 이메일 목록.
-  admins = process.env.AGENT_FLOOR_ADMINS,
-  allowBypassSend = process.env.AGENT_FLOOR_ALLOW_BYPASS_SEND === '1',
-  auditPath = process.env.AGENT_FLOOR_AUDIT || resolve(here, '../data/audit.log'),
+  admins = env('ADMINS'),
+  allowBypassSend = env('ALLOW_BYPASS_SEND') === '1',
+  auditPath = env('AUDIT') || resolve(here, '../data/audit.log'),
   // 관리자가 고친 직원 이름을 남기는 파일. 기본은 감사 기록과 같은 폴더.
-  namesPath = process.env.AGENT_FLOOR_NAMES || join(dirname(auditPath), 'names.json'),
+  namesPath = env('NAMES') || join(dirname(auditPath), 'names.json'),
   // 세션의 터미널과 기기 연결을 남기는 파일. 기본은 감사 기록과 같은 폴더.
-  routesPath = process.env.AGENT_FLOOR_ROUTES || join(dirname(auditPath), 'routes.json'),
+  routesPath = env('ROUTES') || join(dirname(auditPath), 'routes.json'),
   // 시작할 때와, 닫기/지시 보내기가 터미널 핸들을 못 찾았을 때 다시 부르는 조회. 테스트가 갈아 끼운다.
   seedImpl = seedEvents,
 } = {}) {
@@ -90,13 +91,13 @@ export function startServer({
   const proxyGate = trustProxyEmail && adminList.length > 0;
   const mainToken = proxyGate ? '' : token;
   // 토큰이나 프록시 없이 밖으로 열면 누구나 오피스를 읽고 세션을 닫을 수 있다. 명시 허락이 없으면 시작하지 않는다.
-  if (!loopback && !token && !proxyGate && process.env.AGENT_FLOOR_INSECURE !== '1') {
+  if (!loopback && !token && !proxyGate && env('INSECURE') !== '1') {
     return Promise.reject(
-      new Error('AGENT_FLOOR_TOKEN 없이 외부 주소(' + host + ')로 열 수 없어요. 토큰을 정하거나, 정말 필요하면 AGENT_FLOOR_INSECURE=1을 쓰세요.'),
+      new Error('AI_OFFICE_TOKEN 없이 외부 주소(' + host + ')로 열 수 없어요. 토큰을 정하거나, 정말 필요하면 AI_OFFICE_INSECURE=1을 쓰세요.'),
     );
   }
   if (machinePort !== null && !token) {
-    return Promise.reject(new Error('기계용 포트(AGENT_FLOOR_MACHINE_PORT)는 AGENT_FLOOR_TOKEN이 있어야 열 수 있어요.'));
+    return Promise.reject(new Error('기계용 포트(AI_OFFICE_MACHINE_PORT)는 AI_OFFICE_TOKEN이 있어야 열 수 있어요.'));
   }
   const state = createState();
   const clients = new Set();
@@ -425,7 +426,7 @@ export function startServer({
       res.end(body);
     } catch {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Agent Floor server is running, but the web app is not built.\nRun `npm run build`, or use `npm run dev` while developing.\n');
+      res.end('AI Office server is running, but the web app is not built.\nRun `npm run build`, or use `npm run dev` while developing.\n');
     }
   }
 
@@ -628,7 +629,7 @@ export function startServer({
   return new Promise((resolvePromise, reject) => {
     server.once('error', reject);
     server.listen(port, host, () => {
-      log(`Agent Floor is live at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${mainToken ? ' (토큰 인증 켜짐)' : proxyGate ? ' (프록시 로그인 신뢰)' : ''}`);
+      log(`AI Office is live at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${mainToken ? ' (토큰 인증 켜짐)' : proxyGate ? ' (프록시 로그인 신뢰)' : ''}`);
       if (machineServer === null) return done();
       machineServer.once('error', reject);
       machineServer.listen(machinePort, host, () => {
@@ -656,7 +657,7 @@ export function startServer({
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   startServer().catch((err) => {
-    console.error(err.code === 'EADDRINUSE' ? 'Port is already in use. Set AGENT_FLOOR_PORT to pick another.' : err);
+    console.error(err.code === 'EADDRINUSE' ? 'Port is already in use. Set AI_OFFICE_PORT to pick another.' : err);
     process.exit(1);
   });
 }
