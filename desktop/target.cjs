@@ -72,5 +72,22 @@ function resolveTarget(source = process.env) {
   return { remote: false, origin: local, url: `${local}/?app=1`, port };
 }
 
+// 원격 서버 앞의 로그인 프록시(oauth2-proxy)는 Google 로그인으로 보낸다. 로그인 중에는
+// accounts.google.com 안에서 페이지가 여러 번 바뀌므로, 이 이동은 창 안에서 허용해야 쿠키가 앱에 남는다.
+const LOGIN_HOST_RE = /^(?:[a-z0-9-]+\.)*google\.com$/;
+
+/** 창 안에서 이동해도 되는 주소인지 정한다. 아니면 기본 브라우저로 연다. */
+function allowInWindow(target, raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.origin === target.origin) return true;
+  return Boolean(target.remote) && u.protocol === 'https:' && LOGIN_HOST_RE.test(u.hostname);
+}
+
 exports.resolveTarget = resolveTarget;
+exports.allowInWindow = allowInWindow;
 exports.remoteOrigin = remoteOrigin;

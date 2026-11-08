@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { resolveTarget, remoteOrigin } = createRequire(import.meta.url)('../desktop/target.cjs');
+const { resolveTarget, remoteOrigin, allowInWindow } = createRequire(import.meta.url)('../desktop/target.cjs');
 
 /** 상태 폴더를 임시 폴더로 둔 환경을 만든다. */
 function envWith(vars = {}) {
@@ -62,4 +62,16 @@ test('http(s)가 아니거나 잘못된 주소는 원격으로 보지 않는다'
   const { home, source } = envWith();
   writeFileSync(join(home, 'desktop.json'), '{broken');
   assert.equal(resolveTarget(source).remote, false);
+});
+
+test('원격 서버를 볼 때만 Google 로그인 이동을 창 안에서 허용한다', () => {
+  const remote = { remote: true, origin: 'https://floor.example.com' };
+  assert.equal(allowInWindow(remote, 'https://floor.example.com/oauth2/callback?code=x'), true);
+  assert.equal(allowInWindow(remote, 'https://accounts.google.com/v3/signin/identifier'), true);
+  assert.equal(allowInWindow(remote, 'https://github.com/SeongGi/ai-office'), false);
+  assert.equal(allowInWindow(remote, 'https://google.com.evil.example/'), false);
+  assert.equal(allowInWindow(remote, 'http://accounts.google.com/'), false);
+  const local = { remote: false, origin: 'http://127.0.0.1:4317' };
+  assert.equal(allowInWindow(local, 'http://127.0.0.1:4317/?app=1'), true);
+  assert.equal(allowInWindow(local, 'https://accounts.google.com/'), false);
 });

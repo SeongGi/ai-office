@@ -9,7 +9,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { markPng } = require('./icon.cjs');
 const { snooze } = require('./state.cjs');
-const { resolveTarget } = require('./target.cjs');
+const { resolveTarget, allowInWindow } = require('./target.cjs');
 
 // 원격 서버 주소가 있으면 그 서버를, 없으면 로컬 서버를 연다(desktop/target.cjs).
 const TARGET = resolveTarget();
@@ -74,7 +74,7 @@ if (!app.requestSingleInstanceLock()) {
       return { action: 'deny' };
     });
     win.webContents.on('will-navigate', (e, url) => {
-      if (!url.startsWith(TARGET.origin)) {
+      if (!allowInWindow(TARGET, url)) {
         e.preventDefault();
         shell.openExternal(url);
       }
