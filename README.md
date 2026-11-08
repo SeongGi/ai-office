@@ -33,6 +33,8 @@ Compatibility: the old `AGENT_FLOOR_*` environment variables and the `~/.agent-f
 
 After that, the next time a Claude Code session starts, AI Office opens by itself in its own desktop window (no browser). Close the window and it keeps listening from the menu bar; use **Quit (pause auto-open for 6 hours)** in the menu bar icon when you want quiet. Run `ai-office` any time to open it yourself.
 
+If your floor runs on a remote server, open the desktop app on it with `ai-office app --url https://your-floor.example.com`. The app remembers the URL, so plain `ai-office` opens the same server next time. Sign in on the server's own login page inside the window; if `AI_OFFICE_TOKEN` is set, the app sends it as a cookie (never in the URL).
+
 Start a Claude Code session in any project. A cat walks into a room named after the project folder, sits down, and starts working. When it spawns a subagent, a new teammate walks in, gets briefed by letter, works at its own desk, and reports back.
 
 No agents yet? Click **Watch demo**, or run `ai-office demo` in a second terminal.
