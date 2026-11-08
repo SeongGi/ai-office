@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. Agent Floor is small on purpose: a zero-dependency server, a shared reducer, a few pure adapters, and a three.js scene. Please keep it that way.
+Thanks for helping. AI Office is small on purpose: a zero-dependency server, a shared reducer, a few pure adapters, and a three.js scene. Please keep it that way.
 
 ## Setup
 
