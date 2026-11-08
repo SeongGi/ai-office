@@ -195,9 +195,30 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     if (process.platform === 'darwin') app.dock?.setIcon(nativeImage.createFromBuffer(markPng(512, { background: true })));
+    // 서버 바꾸기는 상태 막대 아이콘 메뉴에만 있으면 찾기 어려우므로 앱 메뉴에도 둔다.
+    const changeServer = { label: 'Change server…', click: () => createWindow(true) };
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
-        ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+        ...(process.platform === 'darwin'
+          ? [
+              {
+                label: app.name,
+                submenu: [
+                  { role: 'about' },
+                  { type: 'separator' },
+                  changeServer,
+                  { type: 'separator' },
+                  { role: 'services' },
+                  { type: 'separator' },
+                  { role: 'hide' },
+                  { role: 'hideOthers' },
+                  { role: 'unhide' },
+                  { type: 'separator' },
+                  { role: 'quit' },
+                ],
+              },
+            ]
+          : [{ label: 'File', submenu: [changeServer, { type: 'separator' }, { role: 'quit' }] }]),
         { role: 'editMenu' },
         { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
         { role: 'windowMenu' },
