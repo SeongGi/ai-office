@@ -7,6 +7,8 @@
 //   POST /rename        {agent, name}: 메인 세션의 이름을 고친다. 빈 이름은 고친 이름을 지운다. 제어 권한 필요
 //   POST /send          {agent, text}: 그 메인 세션의 Orca 터미널에 지시를 보낸다. 제어 권한 필요
 //   GET  /whoami        {control, email?}: 이 요청이 제어 권한을 가졌는지
+//   GET  /office        {name, configured, locked}: 사무실 이름. 정하기 전에는 AI Office
+//   POST /office        {name}: 사무실 이름을 정한다. 제어 권한 필요, AI_OFFICE_OFFICE_NAME이 있으면 고정이라 409
 //   GET  /close-queue   ?device=<이름>: 다른 기기가 소유한 세션의 닫기와 지시 요청을 꺼내 간다(close-agent가 부른다)
 //   POST /reset         clear the floor
 //
@@ -25,6 +27,7 @@ import { TERMINAL_HANDLE_RE } from '../adapters/common.mjs';
 import { seedEvents } from '../adapters/seed.mjs';
 import { closeOrcaTerminal } from '../adapters/orca-close.mjs';
 import { sendOrcaPrompt } from '../adapters/orca-send.mjs';
+import { DEFAULT_OFFICE_NAME, validateOfficeName } from '../shared/officeName.js';
 import { applyEvent, createState, normalizeEvent, sweep, PROTOCOL_VERSION } from '../shared/protocol.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +81,10 @@ export function startServer({
   auditPath = env('AUDIT') || resolve(here, '../data/audit.log'),
   // 관리자가 고친 직원 이름을 남기는 파일. 기본은 감사 기록과 같은 폴더.
   namesPath = env('NAMES') || join(dirname(auditPath), 'names.json'),
+  // 사무실 이름을 남기는 파일. 기본은 감사 기록과 같은 폴더.
+  officePath = env('OFFICE_FILE') || join(dirname(auditPath), 'office.json'),
+  // 사무실 이름을 환경변수로 고정한다. 있으면 화면에서 바꿀 수 없다.
+  officeName = env('OFFICE_NAME'),
   // 세션의 터미널과 기기 연결을 남기는 파일. 기본은 감사 기록과 같은 폴더.
   routesPath = env('ROUTES') || join(dirname(auditPath), 'routes.json'),
   // 시작할 때와, 닫기/지시 보내기가 터미널 핸들을 못 찾았을 때 다시 부르는 조회. 테스트가 갈아 끼운다.
@@ -301,6 +308,38 @@ export function startServer({
     return saving;
   }
 
+  // ---- 사무실 이름. 우선순위는 환경변수 고정 → office.json → 미설정(기본 이름 표시).
+  // 파일 쓰기가 실패해도 요청은 성공하고, 그때는 서버를 다시 띄우면 이름이 사라진다.
+  const lockedCheck = typeof officeName === 'string' && officeName.trim() ? validateOfficeName(officeName) : null;
+  if (lockedCheck && !lockedCheck.ok) log(`AI_OFFICE_OFFICE_NAME을 쓰지 않았어요: ${lockedCheck.reason}`);
+  const lockedName = lockedCheck?.ok ? lockedCheck.name : '';
+  let savedOfficeName = '';
+  try {
+    const saved = JSON.parse(readFileSync(officePath, 'utf8'));
+    const check = validateOfficeName(saved?.name);
+    if (check.ok) savedOfficeName = check.name;
+  } catch {
+    // 파일이 없거나 깨졌으면 아직 정하지 않은 것으로 시작한다.
+  }
+  const officeInfo = () => {
+    const name = lockedName || savedOfficeName;
+    return { name: name || DEFAULT_OFFICE_NAME, configured: Boolean(name), locked: Boolean(lockedName) };
+  };
+  let savingOffice = Promise.resolve();
+  function saveOffice() {
+    savingOffice = savingOffice.then(async () => {
+      try {
+        await mkdir(dirname(officePath), { recursive: true });
+        const tmp = `${officePath}.tmp`;
+        await writeFile(tmp, JSON.stringify({ name: savedOfficeName }));
+        await rename(tmp, officePath);
+      } catch {
+        // 이름 저장 실패가 이름 정하기를 막으면 안 된다.
+      }
+    });
+    return savingOffice;
+  }
+
   // 세션의 터미널과 기기도 파일로 남겨, 서버를 다시 띄워도 쉬는 세션에 지시와 퇴사가 닿게 한다.
   try {
     const saved = JSON.parse(readFileSync(routesPath, 'utf8'));
@@ -453,9 +492,9 @@ export function startServer({
     const c = cookieToken(req);
     return c !== '' && sameToken(c);
   }
-  const LOGIN_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>성기 주식회사</title>
+  const LOGIN_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${DEFAULT_OFFICE_NAME}</title>
 <style>body{font-family:system-ui,sans-serif;background:#1b1d23;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0}form{display:grid;gap:12px;width:min(320px,80vw)}input,button{font:inherit;padding:10px;border-radius:8px;border:1px solid #555}button{background:#ffb84d;color:#222;border:0;cursor:pointer}</style></head>
-<body><form method="get" action="/"><h1>성기 주식회사</h1><p>접속 토큰을 입력하세요</p><input type="password" name="token" autofocus autocomplete="current-password"><button type="submit">들어가기</button></form></body></html>`;
+<body><form method="get" action="/"><h1>${DEFAULT_OFFICE_NAME}</h1><p>접속 토큰을 입력하세요</p><input type="password" name="token" autofocus autocomplete="current-password"><button type="submit">들어가기</button></form></body></html>`;
 
   const server = createServer(async (req, res) => {
     // DNS-rebinding guard: when bound to loopback, only answer loopback hostnames.
@@ -514,6 +553,29 @@ export function startServer({
         const result = await closeSession(id);
         await audit(req, { ...agentInfo(id), kind: 'close', result: auditResult(result) });
         return json(res, 200, result);
+      }
+      if (pathname === '/office' && req.method === 'GET') return json(res, 200, officeInfo());
+      if (pathname === '/office' && req.method === 'POST') {
+        const body = await readBody(req);
+        const asked = typeof body?.name === 'string' ? body.name : '';
+        if (!canControl(req)) {
+          await audit(req, { kind: 'office-name', result: 'denied', text: asked });
+          return json(res, 403, { error: '이 계정에는 제어 권한이 없어요' });
+        }
+        if (lockedName) {
+          await audit(req, { kind: 'office-name', result: 'refused: locked', text: asked });
+          return json(res, 409, { error: '사무실 이름이 서버 설정으로 고정돼 있어요' });
+        }
+        const check = validateOfficeName(body?.name);
+        if (!check.ok) {
+          await audit(req, { kind: 'office-name', result: `refused: ${check.reason}`, text: asked });
+          return json(res, 400, { error: check.reason });
+        }
+        savedOfficeName = check.name;
+        broadcast('office', officeInfo());
+        await saveOffice();
+        await audit(req, { kind: 'office-name', result: 'ok', text: check.name });
+        return json(res, 200, officeInfo());
       }
       if (pathname === '/rename' && req.method === 'POST') {
         const body = await readBody(req);
@@ -580,7 +642,7 @@ export function startServer({
           Connection: 'keep-alive',
           'X-Accel-Buffering': 'no',
         });
-        res.write(`retry: 1500\nevent: snapshot\ndata: ${JSON.stringify({ version: PROTOCOL_VERSION, state })}\n\n`);
+        res.write(`retry: 1500\nevent: snapshot\ndata: ${JSON.stringify({ version: PROTOCOL_VERSION, state, office: officeInfo() })}\n\n`);
         clients.add(res);
         req.on('close', () => clients.delete(res));
         return;
