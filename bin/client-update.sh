@@ -17,12 +17,9 @@ if [ "$before" = "$after" ]; then
 fi
 echo "업데이트: ${before:0:7} -> ${after:0:7}"
 git -C "$repo" log --oneline "$before..$after"
-# 새 이름을 먼저 시도하고, 아직 옛 이름으로 설치된 기기를 위해 옛 이름도 시도한다(옛 이름은 deprecated, 호환용).
-for label in com.example.ai-office-close kr.seonggi.agent-floor-close; do
-  if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
-    launchctl kickstart -k "gui/$(id -u)/$label" && echo "close-agent 다시 띄움($label)"
-    break
-  fi
-done
+label=com.example.ai-office-close
+if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+  launchctl kickstart -k "gui/$(id -u)/$label" && echo "close-agent 다시 띄움($label)"
+fi
 exit 0
 }
