@@ -138,6 +138,14 @@ test('office: 검증 실패는 400이고 이름은 그대로, 24자는 되고 �
       'iso\u2066late',
       '제로\u200b폭',
       'b\ufeffom',
+      '\ufeff앞에 BOM',
+      '뒤에 BOM\ufeff',
+      '\u200d',
+      '짝 없는\ud800서로게이트',
+      '\u3164',
+      '\u115f\u1160\uffa0',
+      '\u2800\u2800',
+      ' \u200b ',
     ];
     for (const name of bad) {
       assert.equal((await postOffice(base, { name })).status, 400, JSON.stringify(name));
@@ -250,7 +258,44 @@ test('validateOfficeName: 공백 자르기와 길이, 금지 문자', () => {
   assert.equal(validateOfficeName('').ok, false);
   assert.equal(validateOfficeName(null).ok, false);
   assert.equal(validateOfficeName('x'.repeat(25)).ok, false);
+  for (const bad of ['\ufeffa', 'a\ufeff', '\u200ba', '\u202ea', '\ud800', 'a\udc00']) {
+    assert.equal(validateOfficeName(bad).ok, false, `원문 검사: ${JSON.stringify(bad)}`);
+  }
+  for (const blank of ['\u3164', '\u115f', '\u1160', '\uffa0', '\u2800', ' \u3164\u2800 ', '\u00a0\u3000']) {
+    assert.equal(validateOfficeName(blank).ok, false, `보이는 글자 없음: ${JSON.stringify(blank)}`);
+  }
+  assert.equal(validateOfficeName('\u3164a').ok, true, '보이는 글자가 하나라도 있으면 된다');
+  assert.equal(validateOfficeName('😀').ok, true);
   for (const c of ['\u202a', '\u202e', '\u2066', '\u2069', '\u200b', '\u200f', '\ufeff', '\u0000', '\u007f', '\u2028']) {
     assert.equal(validateOfficeName(`a${c}b`).ok, false, JSON.stringify(c));
   }
+});
+
+test('office: 파일을 쓰지 못하면 log에 한 줄 남긴다', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'af-office-'));
+  await writeFile(join(dir, 'blocker'), 'x');
+  const lines = [];
+  await withServer({ dir, officePath: join(dir, 'blocker', 'office.json'), log: (l) => lines.push(String(l)) }, async (base) => {
+    assert.equal((await postOffice(base, { name: '로그 확인' })).status, 200);
+  });
+  assert.ok(lines.some((l) => l.includes('저장하지 못했어요') && l.includes('로그 확인')), lines.join('\n'));
+});
+
+test('office: 기계용 포트에서는 /office가 404다', async () => {
+  await withServer({ token: 'tt', machinePort: 0 }, async (_base, floor) => {
+    const m = `http://127.0.0.1:${floor.machineServer.address().port}`;
+    const auth = { Authorization: 'Bearer tt' };
+    assert.equal((await fetch(`${m}/office`, { headers: auth })).status, 404);
+    assert.equal((await postOffice(m, { name: '기계' }, auth)).status, 404);
+  });
+});
+
+test('office: 동시에 두 번 POST해도 파일과 GET이 같은 이름을 가리킨다', async () => {
+  await withServer({}, async (base, floor, dir) => {
+    const results = await Promise.all([postOffice(base, { name: '첫째' }), postOffice(base, { name: '둘째' })]);
+    assert.deepEqual(results.map((r) => r.status), [200, 200]);
+    const got = (await getOffice(base)).name;
+    assert.ok(['첫째', '둘째'].includes(got));
+    assert.deepEqual(JSON.parse(await readFile(join(dir, 'office.json'), 'utf8')), { name: got });
+  });
 });

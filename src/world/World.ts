@@ -244,7 +244,6 @@ export class World {
   /** 사무실 이름이 바뀌면 로비 간판 텍스처를 다시 그린다. */
   setOfficeName(name: string) {
     redrawLogo(name);
-    this.loop();
   }
 
   // ---------------------------------------------------------------- theme

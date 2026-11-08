@@ -239,6 +239,11 @@ button {
   text-decoration-color: var(--text-3);
 }
 
+.brand-name[aria-disabled='true'] {
+  cursor: default;
+  text-decoration: none;
+}
+
 .brand-name:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;

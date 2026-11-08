@@ -88,6 +88,9 @@ export class Hud {
   /** 이름 시트가 첫 실행 질문으로 열렸는지. 닫을 때 같은 브라우저에서 다시 묻지 않도록 기억한다. */
   private officeAsking = false;
   private officePrompted = false;
+  private officeDeferred = false;
+  /** 이름 시트를 열기 전에 포커스가 있던 곳. 닫을 때 돌려준다. */
+  private officeReturnFocus: HTMLElement | null = null;
   private empty = el('div', 'empty glass');
   private panel: SidePanel;
   private panelBtn: HTMLButtonElement;
@@ -193,6 +196,7 @@ export class Hud {
 
   setMode(mode: ConnectionMode) {
     this.mode = mode;
+    this.updateBrand();
     this.maybeAskOfficeName();
     const label = { live: '실시간', demo: '데모', connecting: '연결 중', offline: '연결 끊김' }[mode];
     this.modePill.className = `mode ${mode}`;
@@ -733,19 +737,48 @@ export class Hud {
 
   /** 상단바 이름을 갱신하고, 바꿀 수 있는 사람에게는 누르는 버튼으로 보여 준다. 첫 실행이면 질문도 띄운다. */
   setOffice(info: OfficeInfo) {
-    this.brandName.textContent = info.name;
-    const editable = this.officeEditable();
-    this.brandName.classList.toggle('editable', editable);
-    this.brandName.tabIndex = editable ? 0 : -1;
-    this.brandName.title = editable ? '사무실 이름 바꾸기' : '';
+    this.updateBrand();
     if (info.configured && this.officeAsking && this.officeSheet.classList.contains('show')) this.closeOfficeSheet();
     this.maybeAskOfficeName();
+  }
+
+  /** 이름 글자와, 누를 수 있는지(권한, 데모, 잠김)를 상단바에 반영한다. 못 누를 때는 비활성 버튼으로 보인다. */
+  private updateBrand() {
+    const editable = this.officeEditable();
+    this.brandName.textContent = officeInfo().name;
+    this.brandName.classList.toggle('editable', editable);
+    this.brandName.setAttribute('aria-disabled', String(!editable));
+    this.brandName.tabIndex = editable ? 0 : -1;
+    this.brandName.title = editable ? '사무실 이름 바꾸기' : '';
+  }
+
+  /** 다른 글자 입력칸에 포커스가 있는지. 시트 안의 입력칸은 제외한다. */
+  private typingElsewhere() {
+    const a = document.activeElement;
+    if (!(a instanceof HTMLElement) || this.officeSheet.contains(a)) return false;
+    return a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement || a instanceof HTMLSelectElement || a.isContentEditable;
   }
 
   /** 이름을 정하기 전이고 정할 권한이 있으면, 이 브라우저에서 처음 한 번 질문 시트를 띄운다. */
   private maybeAskOfficeName() {
     if (this.officePrompted || officeInfo().configured || this.mode !== 'live' || !this.officeEditable()) return;
     if (readStored(OFFICE_PROMPTED_KEY)) return;
+    // 직원 이름 같은 걸 입력하는 중이면 방해하지 않고, 포커스가 빠진 뒤에 다시 본다.
+    if (this.typingElsewhere()) {
+      if (!this.officeDeferred) {
+        this.officeDeferred = true;
+        document.addEventListener(
+          'focusout',
+          () =>
+            setTimeout(() => {
+              this.officeDeferred = false;
+              this.maybeAskOfficeName();
+            }, 0),
+          { once: true },
+        );
+      }
+      return;
+    }
     this.officePrompted = true;
     this.openOfficeSheet(true);
   }
@@ -814,6 +847,9 @@ export class Hud {
     q('.name-note').textContent = '';
     const input = q<HTMLInputElement>('.office-input');
     input.value = asking ? '' : officeInfo().name;
+    if (!this.officeSheet.classList.contains('show') && document.activeElement instanceof HTMLElement) {
+      this.officeReturnFocus = document.activeElement;
+    }
     this.officeSheet.classList.add('show');
     input.focus();
     input.select();
@@ -830,6 +866,19 @@ export class Hud {
     }
     this.officeAsking = false;
     this.officeSheet.classList.remove('show');
+    const back = this.officeReturnFocus;
+    this.officeReturnFocus = null;
+    if (back?.isConnected) back.focus();
+  }
+
+  /** Tab과 Shift+Tab이 이름 시트 안에서만 돌게 한다. 저장 중이라 칸이 잠겼으면 포커스를 옮기지 않는다. */
+  private trapOfficeTab(e: KeyboardEvent) {
+    const items = [...this.officeSheet.querySelectorAll<HTMLElement>('button, input')].filter((x) => !(x as HTMLButtonElement | HTMLInputElement).disabled);
+    e.preventDefault();
+    if (!items.length) return;
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const next = at < 0 ? (e.shiftKey ? items.length - 1 : 0) : (at + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+    items[next].focus();
   }
 
   openSheet() {
@@ -845,12 +894,15 @@ export class Hud {
 
   private bindKeys() {
     addEventListener('keydown', (e) => {
+      const officeOpen = this.officeSheet.classList.contains('show');
+      if (officeOpen && e.key === 'Tab') return this.trapOfficeTab(e);
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'Escape') {
-        if (this.officeSheet.classList.contains('show')) this.closeOfficeSheet();
+        if (officeOpen) this.closeOfficeSheet();
         else if (this.sheet.classList.contains('show')) this.closeSheet();
         else this.actions.select(null);
-      } else if (e.key === 'f' || e.key === 'F') this.actions.frameAll();
+      } else if (officeOpen || this.sheet.classList.contains('show')) return; // 시트가 열려 있으면 단축키는 쉰다
+      else if (e.key === 'f' || e.key === 'F') this.actions.frameAll();
       else if (e.key === 't' || e.key === 'T') this.actions.toggleTheme();
       else if (e.key === ']' || e.key === '[') {
         const ids = Object.values(this.state?.agents || {})

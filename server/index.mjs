@@ -333,8 +333,9 @@ export function startServer({
         const tmp = `${officePath}.tmp`;
         await writeFile(tmp, JSON.stringify({ name: savedOfficeName }));
         await rename(tmp, officePath);
-      } catch {
-        // 이름 저장 실패가 이름 정하기를 막으면 안 된다.
+      } catch (err) {
+        // 이름 저장 실패가 이름 정하기를 막으면 안 된다. 다만 재시작하면 사라지므로 한 줄은 남긴다.
+        log(`사무실 이름을 파일에 저장하지 못했어요(${officePath}, 이름: ${savedOfficeName}): ${err?.message || err}`);
       }
     });
     return savingOffice;
