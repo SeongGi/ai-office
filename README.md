@@ -125,18 +125,22 @@ The full event format is in [docs/protocol.md](docs/protocol.md). More integrati
 | `AI_OFFICE_URL` | `http://127.0.0.1:4317` | hooks, `emit`, `demo` |
 | `AI_OFFICE_TEAM` | project folder name | hooks: put this session in a named room |
 | `AI_OFFICE_NAME` | `Claude`, `Codex`, `Cursor` | hooks: the lead's display name |
+| `AI_OFFICE_OFFICE_NAME` | none (shows `AI Office`) | server: pin the office name; it then cannot be changed from the UI |
+| `AI_OFFICE_OFFICE_FILE` | `office.json` next to the audit log | server: where the office name is saved |
 | `AI_OFFICE_AUTOLAUNCH` | `1` | set to `0` so hooks never open the app |
 | `AI_OFFICE_SEED` | `1` | set to `0` so the server does not read the Claude Code sessions already open on this machine |
 | `AI_OFFICE_TOKEN` | none | if set on the server, every request must carry it; hooks and `emit` send it as a bearer token (see [docs/deploy-mini.md](docs/deploy-mini.md), written in Korean) |
 
 Group several repos into one room by giving them the same `AI_OFFICE_TEAM`.
 
+The office name defaults to `AI Office`. On first run the app asks you to name your office (top bar, lobby sign, the info cat's lines); click the name in the top bar to change it later. The server keeps the name in `office.json`, so every browser and the desktop app see the same one. Only someone with control rights can set it (local use, or an admin in the Google sign-in mode); on a token-mode server, set `AI_OFFICE_OFFICE_NAME` instead. If the data folder is not writable, the name is kept in memory only and is lost on restart, with no error shown.
+
 ## Privacy and safety
 
 - The server binds to `127.0.0.1` and only answers loopback host names.
 - `POST` requires `Content-Type: application/json`, so web pages cannot fire simple cross-site requests at it. CORS is limited to localhost origins.
 - Hooks time out after 1.2 seconds, swallow every error and always exit 0. If the floor is down, your agents never notice.
-- Agent activity is kept in memory only and is not sent anywhere else. Activity text is clipped to 280 characters. The only files the server writes are the audit log, custom agent names and terminal routes under `data/` (git-ignored), and only when you use the remote-control features (closing a session or sending it an instruction).
+- Agent activity is kept in memory only and is not sent anywhere else. Activity text is clipped to 280 characters. The only files the server writes are the audit log, custom agent names, terminal routes and the office name under `data/` (git-ignored), and only when you use the remote-control features (closing a session or sending it an instruction) or name your office.
 - On start the server also reads which Claude Code sessions are already open on this machine, so their project names show up in the office right away. Set `AI_OFFICE_SEED=0` to turn that off.
 
 ## The desktop app

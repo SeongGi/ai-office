@@ -5,7 +5,10 @@ import { looksFor, shirtFor, sourceLabel, STATUS_COLORS, teamAccent } from '../w
 import { describeJob, displayName, isWatcher } from '../../shared/role';
 import { CARD_KO, IDLE_WAIT_KO, IDLE_WAIT_PILL_KO, PILL_KO, PILL_MEETING_KO, pillDetail, STATUS_LABEL_KO as STATUS_LABEL } from './labels';
 import { effectiveStatus, isBusy, isIdleWait, meetingCovers } from '../../shared/places';
-import { controlAllowed, dismissAgent, renameAgent, sendInstruction } from '../core/connection';
+import { controlAllowed, dismissAgent, renameAgent, sendInstruction, setOfficeName } from '../core/connection';
+import { officeInfo, type OfficeInfo } from '../core/office';
+import { DEFAULT_OFFICE_NAME, OFFICE_NAME_MAX, validateOfficeName } from '../../shared/officeName.js';
+import { readStored } from '../core/storage';
 import pencil from '@phosphor-icons/core/assets/regular/pencil-simple.svg?raw';
 import { icon } from './icons';
 import { REPO_URL } from '../config';
@@ -58,6 +61,9 @@ interface Bubble {
   until: number;
 }
 
+/** 첫 실행 질문을 한 번 보여 준 브라우저는 다시 묻지 않는다. */
+const OFFICE_PROMPTED_KEY = 'ai-office:officeNamePrompted';
+
 export interface HudActions {
   select(id: string | null): void;
   focusTeam(id: string): void;
@@ -77,6 +83,14 @@ export class Hud {
   private teamsDock = el('nav', 'teams glass');
   private card = el('aside', 'card glass');
   private sheet = el('div', 'sheet-wrap');
+  private officeSheet = el('div', 'sheet-wrap');
+  private brandName = el('button', 'brand-name') as HTMLButtonElement;
+  /** 이름 시트가 첫 실행 질문으로 열렸는지. 닫을 때 같은 브라우저에서 다시 묻지 않도록 기억한다. */
+  private officeAsking = false;
+  private officePrompted = false;
+  private officeDeferred = false;
+  /** 이름 시트를 열기 전에 포커스가 있던 곳. 닫을 때 돌려준다. */
+  private officeReturnFocus: HTMLElement | null = null;
   private empty = el('div', 'empty glass');
   private panel: SidePanel;
   private panelBtn: HTMLButtonElement;
@@ -106,8 +120,13 @@ export class Hud {
     // Top bar
     const top = el('header', 'topbar');
     const brand = el('div', 'brand glass');
-    brand.innerHTML = `<span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">성기 주식회사</span>`;
-    brand.append(this.modePill);
+    brand.innerHTML = `<span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
+    // 이름은 사용자가 정한 글자라 innerHTML에 넣지 않고 textContent로만 넣는다.
+    this.brandName.type = 'button';
+    this.brandName.addEventListener('click', () => {
+      if (this.officeEditable()) this.openOfficeSheet(false);
+    });
+    brand.append(this.brandName, this.modePill);
     const tools = el('div', 'tools glass');
     const btn = (name: Parameters<typeof icon>[0], label: string, fn: () => void) => {
       const b = el('button', 'icon-btn', icon(name)) as HTMLButtonElement;
@@ -159,7 +178,9 @@ export class Hud {
     );
     this.card.setAttribute('aria-live', 'polite');
     this.buildSheet();
-    this.root.append(top, this.demoNote, this.teamsDock, this.panel.root, this.card, this.empty, hint, this.sheet);
+    this.buildOfficeSheet();
+    this.setOffice(officeInfo());
+    this.root.append(top, this.demoNote, this.teamsDock, this.panel.root, this.card, this.empty, hint, this.sheet, this.officeSheet);
     container.append(this.root);
 
     this.bindKeys();
@@ -175,6 +196,8 @@ export class Hud {
 
   setMode(mode: ConnectionMode) {
     this.mode = mode;
+    this.updateBrand();
+    this.maybeAskOfficeName();
     const label = { live: '실시간', demo: '데모', connecting: '연결 중', offline: '연결 끊김' }[mode];
     this.modePill.className = `mode ${mode}`;
     this.modePill.innerHTML = `<span class="pulse" aria-hidden="true"></span>${label}`;
@@ -666,7 +689,7 @@ export class Hud {
           <h2 id="sheet-title">에이전트 연결하기</h2>
           <button type="button" class="icon-btn close" aria-label="닫기">${icon('x')}</button>
         </div>
-        <p class="sheet-lede">성기 주식회사는 내 컴퓨터에서 돌아가요. 에이전트는 훅으로 지금 하는 일을 알려 주고, 어떤 정보도 localhost 밖으로 나가지 않아요.</p>
+        <p class="sheet-lede">이 사무실은 내 컴퓨터에서 돌아가요. 에이전트는 훅으로 지금 하는 일을 알려 주고, 어떤 정보도 localhost 밖으로 나가지 않아요.</p>
         <div class="tabs" role="tablist">
           ${Object.entries(SETUP)
             .map(([k, v], i) => `<button type="button" role="tab" class="tab${i === 0 ? ' active' : ''}" data-tab="${k}" aria-selected="${i === 0}">${v.title}</button>`)
@@ -705,6 +728,159 @@ export class Hud {
     this.sheet.querySelector('.scrim')!.addEventListener('click', () => this.closeSheet());
   }
 
+  // ---------------------------------------------------------------- office name
+
+  /** 이름을 바꿀 수 있는지. 제어 권한이 있고 서버 설정으로 고정되지 않았을 때만 참이다. */
+  private officeEditable() {
+    return controlAllowed() && !officeInfo().locked;
+  }
+
+  /** 상단바 이름을 갱신하고, 바꿀 수 있는 사람에게는 누르는 버튼으로 보여 준다. 첫 실행이면 질문도 띄운다. */
+  setOffice(info: OfficeInfo) {
+    this.updateBrand();
+    if (info.configured && this.officeAsking && this.officeSheet.classList.contains('show')) this.closeOfficeSheet();
+    this.maybeAskOfficeName();
+  }
+
+  /** 이름 글자와, 누를 수 있는지(권한, 데모, 잠김)를 상단바에 반영한다. 못 누를 때는 비활성 버튼으로 보인다. */
+  private updateBrand() {
+    const editable = this.officeEditable();
+    this.brandName.textContent = officeInfo().name;
+    this.brandName.classList.toggle('editable', editable);
+    this.brandName.setAttribute('aria-disabled', String(!editable));
+    this.brandName.tabIndex = editable ? 0 : -1;
+    this.brandName.title = editable ? '사무실 이름 바꾸기' : '';
+  }
+
+  /** 다른 글자 입력칸에 포커스가 있는지. 시트 안의 입력칸은 제외한다. */
+  private typingElsewhere() {
+    const a = document.activeElement;
+    if (!(a instanceof HTMLElement) || this.officeSheet.contains(a)) return false;
+    return a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement || a instanceof HTMLSelectElement || a.isContentEditable;
+  }
+
+  /** 이름을 정하기 전이고 정할 권한이 있으면, 이 브라우저에서 처음 한 번 질문 시트를 띄운다. */
+  private maybeAskOfficeName() {
+    if (this.officePrompted || officeInfo().configured || this.mode !== 'live' || !this.officeEditable()) return;
+    if (readStored(OFFICE_PROMPTED_KEY)) return;
+    // 직원 이름 같은 걸 입력하는 중이면 방해하지 않고, 포커스가 빠진 뒤에 다시 본다.
+    if (this.typingElsewhere()) {
+      if (!this.officeDeferred) {
+        this.officeDeferred = true;
+        document.addEventListener(
+          'focusout',
+          () =>
+            setTimeout(() => {
+              this.officeDeferred = false;
+              this.maybeAskOfficeName();
+            }, 0),
+          { once: true },
+        );
+      }
+      return;
+    }
+    this.officePrompted = true;
+    this.openOfficeSheet(true);
+  }
+
+  private buildOfficeSheet() {
+    // 이름 자리는 비워 두고, 열 때 DOM 속성으로만 채운다.
+    this.officeSheet.innerHTML = `
+      <div class="scrim"></div>
+      <section class="sheet glass office-sheet" role="dialog" aria-modal="true" aria-labelledby="office-title">
+        <div class="sheet-head">
+          <h2 id="office-title"></h2>
+          <button type="button" class="icon-btn close" aria-label="닫기">${icon('x')}</button>
+        </div>
+        <p class="sheet-lede"></p>
+        <input class="office-input" type="text" autocomplete="off" aria-label="사무실 이름" />
+        <p class="name-note" aria-live="polite"></p>
+        <div class="row">
+          <button type="button" class="btn primary save">저장</button>
+          <button type="button" class="btn later"></button>
+        </div>
+      </section>`;
+    const q = <T extends HTMLElement>(sel: string) => this.officeSheet.querySelector<T>(sel)!;
+    const input = q<HTMLInputElement>('.office-input');
+    input.placeholder = DEFAULT_OFFICE_NAME;
+    // maxLength는 UTF-16 단위라 넉넉히 잡고, 정확한 글자 수는 저장 때 검사한다.
+    input.maxLength = OFFICE_NAME_MAX * 2;
+    const save = q<HTMLButtonElement>('.save');
+    const note = q<HTMLElement>('.name-note');
+    const close = () => this.closeOfficeSheet();
+    q('.close').addEventListener('click', close);
+    q('.scrim').addEventListener('click', close);
+    q('.later').addEventListener('click', close);
+    input.addEventListener('input', () => (note.textContent = ''));
+    input.addEventListener('keydown', (e) => {
+      // 한글 조합 중의 Enter는 글자를 확정하는 키다.
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Enter') save.click();
+      else if (e.key === 'Escape') close();
+    });
+    save.addEventListener('click', () => {
+      const check = validateOfficeName(input.value);
+      if (!check.ok) {
+        note.textContent = check.reason;
+        return;
+      }
+      input.disabled = save.disabled = true;
+      note.textContent = '저장하는 중이에요';
+      void setOfficeName(check.name).then((r) => {
+        input.disabled = save.disabled = false;
+        if (r.ok) return this.closeOfficeSheet();
+        note.textContent = `이름을 저장하지 못했어요: ${r.reason || ''}`;
+        input.focus();
+      });
+    });
+  }
+
+  /** asking이 참이면 첫 실행 질문, 거짓이면 이름 바꾸기다. 바꾸기는 지금 이름이 미리 채워진다. */
+  private openOfficeSheet(asking: boolean) {
+    this.officeAsking = asking;
+    const q = <T extends HTMLElement>(sel: string) => this.officeSheet.querySelector<T>(sel)!;
+    q('#office-title').textContent = asking ? '사무실 이름을 정해 주세요' : '사무실 이름 바꾸기';
+    q('.sheet-lede').textContent = asking
+      ? '상단바와 로비 간판에 보여 줄 이름이에요. 나중에 상단바의 이름을 눌러 바꿀 수 있어요.'
+      : '상단바와 로비 간판에 보여 줄 이름이에요.';
+    q('.later').textContent = asking ? '나중에' : '취소';
+    q('.name-note').textContent = '';
+    const input = q<HTMLInputElement>('.office-input');
+    input.value = asking ? '' : officeInfo().name;
+    if (!this.officeSheet.classList.contains('show') && document.activeElement instanceof HTMLElement) {
+      this.officeReturnFocus = document.activeElement;
+    }
+    this.officeSheet.classList.add('show');
+    input.focus();
+    input.select();
+  }
+
+  private closeOfficeSheet() {
+    // 질문을 그냥 닫으면 이 브라우저에서는 다시 묻지 않는다.
+    if (this.officeAsking) {
+      try {
+        localStorage.setItem(OFFICE_PROMPTED_KEY, '1');
+      } catch {
+        /* storage unavailable: asked again next visit */
+      }
+    }
+    this.officeAsking = false;
+    this.officeSheet.classList.remove('show');
+    const back = this.officeReturnFocus;
+    this.officeReturnFocus = null;
+    if (back?.isConnected) back.focus();
+  }
+
+  /** Tab과 Shift+Tab이 이름 시트 안에서만 돌게 한다. 저장 중이라 칸이 잠겼으면 포커스를 옮기지 않는다. */
+  private trapOfficeTab(e: KeyboardEvent) {
+    const items = [...this.officeSheet.querySelectorAll<HTMLElement>('button, input')].filter((x) => !(x as HTMLButtonElement | HTMLInputElement).disabled);
+    e.preventDefault();
+    if (!items.length) return;
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const next = at < 0 ? (e.shiftKey ? items.length - 1 : 0) : (at + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+    items[next].focus();
+  }
+
   openSheet() {
     this.sheet.classList.add('show');
     this.sheet.querySelector<HTMLButtonElement>('.tab.active')?.focus();
@@ -718,11 +894,15 @@ export class Hud {
 
   private bindKeys() {
     addEventListener('keydown', (e) => {
+      const officeOpen = this.officeSheet.classList.contains('show');
+      if (officeOpen && e.key === 'Tab') return this.trapOfficeTab(e);
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'Escape') {
-        if (this.sheet.classList.contains('show')) this.closeSheet();
+        if (officeOpen) this.closeOfficeSheet();
+        else if (this.sheet.classList.contains('show')) this.closeSheet();
         else this.actions.select(null);
-      } else if (e.key === 'f' || e.key === 'F') this.actions.frameAll();
+      } else if (officeOpen || this.sheet.classList.contains('show')) return; // 시트가 열려 있으면 단축키는 쉰다
+      else if (e.key === 'f' || e.key === 'F') this.actions.frameAll();
       else if (e.key === 't' || e.key === 'T') this.actions.toggleTheme();
       else if (e.key === ']' || e.key === '[') {
         const ids = Object.values(this.state?.agents || {})

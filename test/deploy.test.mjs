@@ -56,7 +56,7 @@ test('token auth: 401, bearer, cookie, ?token= 리다이렉트, /health 열림',
     const page = await fetch(`${base}/`, { headers: { Accept: 'text/html' } });
     assert.equal(page.status, 401);
     const html = await page.text();
-    assert.ok(html.includes('성기 주식회사') && html.includes('접속 토큰을 입력하세요') && html.includes('name="token"'));
+    assert.ok(html.includes('<h1>AI Office</h1>') && html.includes('접속 토큰을 입력하세요') && html.includes('name="token"'));
 
     const bad = await fetch(`${base}/?token=wrong`, { redirect: 'manual', headers: { Accept: 'text/html' } });
     assert.equal(bad.status, 401);

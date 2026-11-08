@@ -57,6 +57,7 @@ import { applyThemeToMaterials } from './materials';
 import { prefersReducedMotion } from './motion';
 import { REC } from './quality';
 import { PALETTES, teamAccent, type ThemeName } from './palette';
+import { redrawLogo } from './textures';
 import { TeamRoom } from './TeamRoom';
 import { setDeskLamps, Workstation } from './Workstation';
 
@@ -238,6 +239,11 @@ export class World {
     matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => (this.reduced = e.matches));
     this.setTheme('light');
     this.loop();
+  }
+
+  /** 사무실 이름이 바뀌면 로비 간판 텍스처를 다시 그린다. */
+  setOfficeName(name: string) {
+    redrawLogo(name);
   }
 
   // ---------------------------------------------------------------- theme

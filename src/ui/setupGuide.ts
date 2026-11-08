@@ -13,7 +13,7 @@ export const SETUP: Record<string, { title: string; steps: { label: string; code
       INSTALL,
       { label: '~/.claude/settings.json에 훅 추가하기', code: 'ai-office setup claude --write' },
     ],
-    note: '세션이 시작되면 성기 주식회사가 저절로 열려요. 세션마다 프로젝트 폴더 이름의 사무실이 생기고, 서브에이전트는 들어와서 설명을 듣고 결과를 보고해요.',
+    note: '세션이 시작되면 이 사무실이 저절로 열려요. 세션마다 프로젝트 폴더 이름의 사무실이 생기고, 서브에이전트는 들어와서 설명을 듣고 결과를 보고해요.',
   },
   codex: {
     title: 'Codex',
@@ -29,7 +29,7 @@ export const SETUP: Record<string, { title: string; steps: { label: string; code
       INSTALL,
       { label: '~/.cursor/hooks.json에 훅 추가하기', code: 'ai-office setup cursor --write' },
     ],
-    note: '성기 주식회사는 듣기만 해요. 권한 요청에 대신 답하는 일은 절대 없어요.',
+    note: '이 사무실은 듣기만 해요. 권한 요청에 대신 답하는 일은 절대 없어요.',
   },
   http: {
     title: '그 밖의 도구',

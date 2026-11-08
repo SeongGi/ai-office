@@ -42,7 +42,8 @@ import { deskCenter, drawChair, drawDesk, type DeskView } from './desk';
 import { circle, rbox, setStyle, star, text, textWidth } from './draw';
 import { drawServerLeds } from './furniture';
 import { rosterOrigin } from './roster';
-import { Npcs } from './npcs';
+import { Npcs, setNpcOffice } from './npcs';
+import { DEFAULT_OFFICE_NAME } from '../../shared/officeName.js';
 import { FarewellChat } from '../world/farewellChat';
 import { PALETTES2D, type ThemeName } from './palette2d';
 import { drawScene, ELEV, sceneBounds, sceneKey, type Rect4, type SceneData } from './scene';
@@ -113,6 +114,7 @@ export class World2D implements FloorWorld {
   private book = new SeatBook();
   private state: WorldState | null = null;
   private theme: ThemeName = 'light';
+  private office = DEFAULT_OFFICE_NAME;
   private reduced = prefersReducedMotion();
   private idleSince = new Map<string, number>();
   private nextSpawnAt = 0;
@@ -166,6 +168,12 @@ export class World2D implements FloorWorld {
   setTheme(theme: ThemeName) {
     this.theme = theme;
     this.cacheKey = '';
+  }
+
+  /** 사무실 이름이 바뀌면 로비 간판(캐시 키에 이름이 든다)과 안내 고양이 대사를 새 이름으로 바꾼다. */
+  setOfficeName(name: string) {
+    this.office = name;
+    setNpcOffice(name);
   }
 
   // ---------------------------------------------------------------- sync
@@ -816,7 +824,7 @@ export class World2D implements FloorWorld {
     const plan = this.plan;
     const state = this.state;
     if (!plan || !state) return;
-    const data: SceneData = { plan, teams: state.teams, theme: this.theme };
+    const data: SceneData = { plan, teams: state.teams, theme: this.theme, office: this.office };
     if (this.ensureCache(data, sc) && this.cache && this.cacheBounds) {
       const b = this.cacheBounds;
       ctx.imageSmoothingEnabled = true;

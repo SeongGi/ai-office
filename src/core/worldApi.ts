@@ -17,6 +17,8 @@ export interface FloorWorld {
   onFrame?: () => void;
   readonly perf: WorldPerf;
   setTheme(theme: ThemeName): void;
+  /** 사무실 이름이 바뀌었을 때 간판과 대사를 새 이름으로 바꾼다. */
+  setOfficeName(name: string): void;
   sync(state: WorldState): void;
   reset(): void;
   handleEffect(effect: Effect): void;
