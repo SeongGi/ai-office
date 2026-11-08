@@ -47,7 +47,7 @@ export const CARD_KO = {
   sendPlaceholder: '이 직원에게 일을 시켜요',
   send: '보내기',
   sendSent: '보냈어요',
-  sendQueued: '대기열에 넣었어요 (서버기기 도우미가 전달해요)',
+  sendQueued: '대기열에 넣었어요 (서버 기기 도우미가 전달해요)',
   sendBusy: '일하는 중이라 지금은 보낼 수 없어요',
   sendSub: '서브에이전트에게는 보낼 수 없어요',
   sendWorking: '보내는 중이에요',
