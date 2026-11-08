@@ -1,4 +1,4 @@
-# Agent Floor
+# AI Office
 
 A live 2D office for your coding agents, staffed by cats.
 
@@ -8,7 +8,7 @@ Works with **Claude Code**, **Codex**, **Cursor**, and anything else that can se
 
 **Live demo:** once GitHub Pages is switched on for this repository it is served at <https://seonggi.github.io/ai-office/> (runs in your browser, no install). Until then, run `npm run demo` as described below.
 
-![Agent Floor: the 2D office with a cat at every desk](docs/office-day.png)
+![AI Office: the 2D office with a cat at every desk](docs/office-day.png)
 
 ![The same office at night](docs/office-night.png)
 
@@ -16,7 +16,7 @@ A 3D view (three.js) from the original project is still included. Press the **2D
 
 ## Quick start
 
-Agent Floor is not published to npm, so install it from source (Node 20 or newer):
+AI Office is not published to npm, so install it from source (Node 20 or newer). The command line tool is still called `agent-floor`, after the original project it grew from, and so are the `AGENT_FLOOR_*` variables:
 
 ```bash
 git clone https://github.com/SeongGi/ai-office
@@ -29,7 +29,7 @@ agent-floor setup claude --write
 
 Do not run `npm i -g agent-floor`: that name belongs to somebody else's package, if it exists at all. Without `npm link`, replace `agent-floor` in every command below with `node /path/to/ai-office/bin/agent-floor.mjs`.
 
-After that, the next time a Claude Code session starts, Agent Floor opens by itself in its own desktop window (no browser). Close the window and it keeps listening from the menu bar; use **Quit (pause auto-open for 6 hours)** in the menu bar icon when you want quiet. Run `agent-floor` any time to open it yourself.
+After that, the next time a Claude Code session starts, AI Office opens by itself in its own desktop window (no browser). Close the window and it keeps listening from the menu bar; use **Quit (pause auto-open for 6 hours)** in the menu bar icon when you want quiet. Run `agent-floor` any time to open it yourself.
 
 Start a Claude Code session in any project. A cat walks into a room named after the project folder, sits down, and starts working. When it spawns a subagent, a new teammate walks in, gets briefed by letter, works at its own desk, and reports back.
 
@@ -81,7 +81,7 @@ agent-floor setup cursor --write     # ~/.cursor/hooks.json
 agent-floor setup cursor --project   # .cursor/hooks.json in this repo
 ```
 
-Only observing hooks are installed. Agent Floor never answers a permission prompt for you.
+Only observing hooks are installed. AI Office never answers a permission prompt for you.
 
 ### Anything else
 
