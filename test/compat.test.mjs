@@ -158,3 +158,11 @@ test('setup cursor --write: 옛 훅 항목도 같은 방식으로 바꾼다', ()
   assert.equal(config.hooks.stop.length, 1);
   assert.match(config.hooks.stop[0].command, /ai-office\.mjs" hook cursor$/);
 });
+
+test('옛 경로 bin/agent-floor.mjs 스텁이 새 CLI와 같이 동작한다', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const stub = fileURLToPath(new URL('../bin/agent-floor.mjs', import.meta.url));
+  const out = execFileSync(process.execPath, [stub, '--help'], { encoding: 'utf8', env: { ...process.env, HOME: process.env.TMPDIR || '/tmp' } });
+  assert.match(out, /ai-office/i);
+});
