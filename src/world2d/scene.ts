@@ -17,6 +17,8 @@ export interface SceneData {
   plan: BuildingLayout;
   teams: Record<string, Team>;
   theme: ThemeName;
+  /** 사무실 이름. 로비 간판에 그린다. */
+  office: string;
 }
 
 export interface Rect4 {
@@ -43,7 +45,7 @@ export function sceneKey(d: SceneData) {
     .map((r) => `${r.team.id}:${d.teams[r.team.id]?.name ?? r.team.name}:${d.teams[r.team.id]?.hue ?? r.team.hue}:${r.x.toFixed(2)}:${r.w.toFixed(2)}:${r.podLeft.toFixed(2)}:${r.hasLead ? 1 : 0}:${r.doorX.toFixed(2)}`)
     .join('|');
   const am = d.plan.amenities.map((a) => `${a.kind}:${a.rect.x.toFixed(2)}:${a.rect.w.toFixed(2)}`).join('|');
-  return `${d.theme}|${d.plan.x1.toFixed(2)}|${rooms}|${am}`;
+  return `${d.theme}|${d.office}|${d.plan.x1.toFixed(2)}|${rooms}|${am}`;
 }
 
 const AMENITY_NAME: Record<AmenityKind, string> = { kitchen: '주방', meeting: '회의실', lounge: '라운지', games: '게임존', booths: '1인 부스', interview: '면접실', library: ROOM_INFO.library.name, server: ROOM_INFO.server.name, search: ROOM_INFO.search.name };
@@ -140,7 +142,7 @@ export function drawScene(ctx: Ctx, d: SceneData, cull: Rect4 | null) {
   ctx.restore();
 
   // --- furniture
-  drawLobby(ctx, P, plan);
+  drawLobby(ctx, P, plan, d.office);
   for (const r of plan.rooms.values()) {
     if (!hit(cull, r.x - r.w / 2, r.z - r.d / 2, r.x + r.w / 2, r.z + r.d / 2)) continue;
     drawOffice(ctx, P, r, P.accent((d.teams[r.team.id] ?? r.team).hue), (d.teams[r.team.id] ?? r.team).hue);
@@ -299,13 +301,13 @@ function drawElevatorFrame(ctx: Ctx, P: Palette2D) {
 
 // ---------------------------------------------------------------- rooms
 
-function drawLobby(ctx: Ctx, P: Palette2D, plan: BuildingLayout) {
+function drawLobby(ctx: Ctx, P: Palette2D, plan: BuildingLayout, office: string) {
   const x0 = plan.x0;
   const lx = x0 + LOBBY_WIDTH / 2;
   const z0 = plan.z0;
   const z1 = plan.z1;
   F.rug(ctx, lx + 0.4, z1 - 3.8, 5.0, 3.2, P.dark ? '#4a4378' : '#ffd9c7');
-  F.logoBoard(ctx, x0 + 4.3, z0 + 0.95, 5.6, '#ff8a5c');
+  F.logoBoard(ctx, x0 + 4.3, z0 + 0.95, 5.6, '#ff8a5c', office);
   const rc = receptionSpot(x0, z0);
   F.reception(ctx, rc.x, rc.z, rc.w);
   F.sofa(ctx, lx + 0.4, z1 - 2.1, 0, 2.7, P.sofa[0]);

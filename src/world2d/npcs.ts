@@ -1,7 +1,8 @@
 // Decor cats that are not agents: the info cat at the lobby reception and the interview corner in the kitchen.
 // They are not in WorldState, cannot be picked and cost the server nothing. Every move is a pure function of
 // the clock, so nothing here allocates per frame. With reduced motion they hold one static pose and stay quiet.
-import { NPC_SCRIPTS, type NpcPlace, type NpcTag } from '../../shared/npcScripts.js';
+import { NPC_SCRIPTS, fillOffice, type NpcPlace, type NpcTag } from '../../shared/npcScripts.js';
+import { DEFAULT_OFFICE_NAME } from '../../shared/officeName.js';
 import { LOBBY_WIDTH, toWorld, type BuildingLayout } from '../world/layout';
 import { drawCat, HEAD_TOP, type CatAct, type CatView } from './cat';
 import { rgba } from './color';
@@ -41,7 +42,7 @@ const WAVE_LIFE = 1.8;
 /** The one line shown when motion is reduced. */
 const STILL_LINE = '어서 오세요!';
 
-/** One line of a scenario with its bubble text already wrapped, built once at load. */
+/** One line of a scenario with its bubble text already wrapped, built at load and again when the office is renamed. */
 interface Line {
   slot: 0 | 1;
   text: string;
@@ -49,10 +50,13 @@ interface Line {
 }
 const PLACES = ['info', 'interview', 'lounge', 'banter'] as const;
 const SCN: Record<NpcPlace, Line[][]> = { info: [], interview: [], lounge: [], banter: [] };
-for (const place of PLACES) {
-  for (const sc of NPC_SCRIPTS[place]) {
-    SCN[place].push(
-      sc.map(([slot, str, tag]) => {
+
+/** Fills the scenario table. The office name goes into lines that carry {office}. */
+function buildScenarios(office: string) {
+  for (const place of PLACES) {
+    SCN[place] = NPC_SCRIPTS[place].map((sc) =>
+      sc.map(([slot, raw, tag]) => {
+        const str = fillOffice(raw, office);
         // A long line breaks at the space nearest the middle so the bubble stays small.
         let text = str;
         if (str.length > 9) {
@@ -60,10 +64,16 @@ for (const place of PLACES) {
           for (let i = 0; i < str.length; i++) if (str[i] === ' ' && (at < 0 || Math.abs(i - str.length / 2) < Math.abs(at - str.length / 2))) at = i;
           if (at > 0) text = `${str.slice(0, at)}\n${str.slice(at + 1)}`;
         }
-        return { slot, text, tag: tag ?? '' };
+        return { slot, text, tag: tag ?? '' } as Line;
       }),
     );
   }
+}
+buildScenarios(DEFAULT_OFFICE_NAME);
+
+/** Rebuilds the table for a new office name. A scenario already playing finishes with the old line. */
+export function setNpcOffice(office: string) {
+  buildScenarios(office);
 }
 const HISTORY = 5;
 

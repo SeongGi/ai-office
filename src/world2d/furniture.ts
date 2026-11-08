@@ -1,6 +1,6 @@
 // Static furniture, drawn in a local frame (metres). Top-down shapes with soft outlines.
 import { darken, lighten, mix } from './color';
-import { circle, ellipse, item, rbox, shape, style, text } from './draw';
+import { circle, ellipse, item, rbox, shape, style, text, textWidth } from './draw';
 import { OFFICE_D } from '../world/layout';
 import { BOOTH_PITCH, boothSeats, globeSpot, searchWall, serverRacks } from '../world/toolRooms';
 import { NEWHIRE_BENCH } from '../world/trips';
@@ -236,9 +236,12 @@ export function newHireBench(ctx: Ctx) {
   rbox(ctx, b.x - 0.04, b.z, b.w - 0.14, b.d - 0.2, lighten(P.woodLight, 0.35), 0.16, { shadow: false, lw: 0.02 });
 }
 
-export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string) {
+export function logoBoard(ctx: Ctx, x: number, y: number, w: number, accent: string, name: string) {
   rbox(ctx, x, y, w, 1.05, P.plaque, 0.4, { lw: 0.08, line: accent });
-  text(ctx, '성기 주식회사', x + 0.35, y + 0.02, 0.58, P.plaqueText, { weight: 800 });
+  // 이름이 길면 글자 크기를 줄여 간판 폭(고양이 배지를 뺀 자리)에 맞춘다.
+  const room = w - 1.7;
+  const full = textWidth(ctx, name, 0.58, 800);
+  text(ctx, name, x + 0.35, y + 0.02, full > room ? (0.58 * room) / full : 0.58, P.plaqueText, { weight: 800 });
   // small cat face badge
   circle(ctx, x - w / 2 + 0.7, y + 0.02, 0.33, '#ffd8a8', { lw: 0.045, shadow: false });
   for (const s of [-1, 1]) {

@@ -213,9 +213,36 @@ button {
 }
 
 .brand-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-weight: 650;
   letter-spacing: -0.01em;
   font-size: 15px;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* 이름을 바꿀 수 있는 사람에게만 누르는 버튼처럼 보인다. */
+.brand-name.editable {
+  cursor: pointer;
+}
+
+.brand-name.editable:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--text-3);
+}
+
+.brand-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
 }
 
 .mode {
@@ -1095,6 +1122,36 @@ button {
   margin: 6px 0 18px;
   color: var(--text-2);
   max-width: 52ch;
+}
+
+.office-sheet {
+  width: min(440px, 100%);
+}
+
+.office-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.office-sheet .name-note {
+  min-height: 1.4em;
+  margin: 8px 0 12px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.office-sheet .row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .tabs {

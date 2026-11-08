@@ -1,7 +1,25 @@
 // Short chat scenarios for the decor cats (info desk, interview room, lounge bench, office banter).
 // Plain data so node tests can lint it. A line is [slot, text, tag?]: slot 0 or 1 picks the speaker,
 // tag is an optional small action (nod, hop, sip, stretch, cheer). Every line stays within 18 characters.
+// 대사에 든 {office} 자리는 화면에 낼 때 사무실 이름으로 바꾼다(fillOffice).
 export const MAX_LINE = 18;
+
+/** 이름을 넣으면 한 줄이 MAX_LINE을 넘는 경우에 쓰는, 이름 없는 대체 문장. */
+export const OFFICE_FALLBACK = {
+  '{office}입니다': '우리 회사입니다',
+  '여보세요? {office}요': '여보세요? 회사입니다',
+};
+
+/**
+ * 대사의 {office} 자리를 사무실 이름으로 바꾼다. 자리표시자가 없으면 그대로 돌려준다.
+ * 바꾼 줄이 MAX_LINE(코드 포인트 기준)을 넘으면 이름 없는 대체 문장을 쓴다.
+ */
+export function fillOffice(text, office) {
+  if (!text.includes('{office}')) return text;
+  const filled = text.split('{office}').join(office);
+  if ([...filled].length <= MAX_LINE) return filled;
+  return OFFICE_FALLBACK[text] ?? filled.slice(0, MAX_LINE);
+}
 
 export const NPC_SCRIPTS = {
   // interviewer (0) and candidate (1)
@@ -23,12 +41,12 @@ export const NPC_SCRIPTS = {
   ],
   // the info cat sits alone at the desk, so every line is hers (slot 0)
   info: [
-    [[0, '어서 오세요!'], [0, '성기 주식회사입니다', 'nod'], [0, '무엇을 도와드릴까요?']],
+    [[0, '어서 오세요!'], [0, '{office}입니다', 'nod'], [0, '무엇을 도와드릴까요?']],
     [[0, '냥서재는 왼쪽 위예요'], [0, '책이 가득한 곳이에요'], [0, '조용히 다녀오세요', 'nod']],
     [[0, '냥서버실은 복도 끝이에요'], [0, '시원하니까 옷 챙기세요'], [0, '윙윙 소리가 나요']],
     [[0, '냥탐색실은 저쪽이에요'], [0, '모르는 건 거기서 찾아요'], [0, '저는 안내만 잘해요', 'hop']],
     [[0, '게임존은 오른쪽이에요'], [0, '탁구 한 판 어때요?'], [0, '일은 잠깐 쉬고요', 'hop']],
-    [[0, '여보세요? 성기 주식회사요'], [0, '네, 잠시만요'], [0, '아, 잘못 거셨어요'], [0, '야옹은 제 이름 아니에요']],
+    [[0, '여보세요? {office}요'], [0, '네, 잠시만요'], [0, '아, 잘못 거셨어요'], [0, '야옹은 제 이름 아니에요']],
     [[0, '분실물이 들어왔어요'], [0, '털실 공 하나예요'], [0, '주인은 누구일까요?'], [0, '저는 아니에요', 'nod']],
     [[0, '오늘 날씨가 좋네요'], [0, '창가 자리가 인기예요'], [0, '볕이 아주 따뜻해요', 'stretch']],
     [[0, '비 오는 날이네요'], [0, '우산 꼭 챙기세요'], [0, '젖으면 털이 무거워요']],

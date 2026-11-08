@@ -3,6 +3,7 @@ import '@fontsource-variable/geist-mono';
 import './styles.css';
 import { connect, isDemoRunning, startDemo } from './core/connection';
 import { store } from './core/store';
+import { officeInfo, onOfficeChange } from './core/office';
 import { readStored } from './core/storage';
 import { Hud } from './ui/hud';
 import type { FloorWorld } from './core/worldApi';
@@ -101,6 +102,16 @@ async function boot() {
   world.onFrame = () => hud.frame(world.anchors());
   // Refresh relative times on the card.
   setInterval(() => hud.setState(store.state, store.selected), 5000);
+
+  // 사무실 이름이 바뀌면 탭 제목, 상단바, 로비 간판, 안내 고양이 대사를 함께 바꾼다.
+  const applyOffice = () => {
+    const info = officeInfo();
+    document.title = info.name;
+    world.setOfficeName(info.name);
+    hud.setOffice(info);
+  };
+  onOfficeChange(applyOffice);
+  applyOffice();
 
   hud.setMode(store.mode);
   connect();

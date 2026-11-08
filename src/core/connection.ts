@@ -2,6 +2,7 @@ import { createScript } from '../../shared/demo-script.js';
 import type { Effect, FloorEvent, WorldState } from '../../shared/protocol';
 import { store } from './store';
 import { DEMO_ONLY } from '../config';
+import { applyOffice, touchOffice } from './office';
 
 const params = new URLSearchParams(location.search);
 
@@ -93,6 +94,7 @@ async function loadWhoami() {
   } catch {
     control = null; // 서버에 닿지 못했으니 다음 접속 때 다시 묻는다
   }
+  touchOffice(); // 권한을 알게 됐으니 이름 질문을 띄울지 다시 본다
 }
 
 export interface SendResult {
@@ -138,6 +140,30 @@ export async function renameAgent(agent: string, name: string): Promise<RenameRe
   }
 }
 
+export interface OfficeNameResult {
+  ok: boolean;
+  reason?: string;
+}
+
+/** 사무실 이름을 정한다. 거절 사유는 서버가 한국어로 준다. 성공하면 바로 화면에도 반영한다. */
+export async function setOfficeName(name: string): Promise<OfficeNameResult> {
+  try {
+    const res = await fetch(`${serverBase()}/office`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && typeof body?.name === 'string') {
+      applyOffice(body);
+      return { ok: true };
+    }
+    return { ok: false, reason: body?.error || `서버 응답 ${res.status}` };
+  } catch {
+    return { ok: false, reason: '서버에 닿지 못했어요' };
+  }
+}
+
 export function connect() {
   if (params.has('demo') || (DEMO_ONLY && !params.has('server'))) {
     startDemo();
@@ -158,9 +184,13 @@ export function connect() {
       window.clearTimeout(fallback);
       if (control === null) void loadWhoami();
       stopDemo();
-      const { state } = JSON.parse((msg as MessageEvent).data) as { state: WorldState };
+      const { state, office } = JSON.parse((msg as MessageEvent).data) as { state: WorldState; office?: unknown };
+      applyOffice(office);
       store.replace(state);
       store.setMode('live');
+    });
+    es.addEventListener('office', (msg) => {
+      applyOffice(JSON.parse((msg as MessageEvent).data));
     });
     es.addEventListener('event', (msg) => {
       if (demoRunning) return;

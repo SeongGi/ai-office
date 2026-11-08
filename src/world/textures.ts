@@ -1,6 +1,7 @@
 import { CanvasTexture, MeshStandardMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
 import { UI_FONT } from './text';
 import { REC } from './quality';
+import { DEFAULT_OFFICE_NAME } from '../../shared/officeName.js';
 
 // Procedural textures, drawn once and shared. No image files ship with the app.
 
@@ -214,31 +215,53 @@ export const clockMaterial = () =>
     return new MeshStandardMaterial({ map: t, roughness: 0.4 });
   });
 
-/** The big lobby wall sign. */
+/** The big lobby wall sign. The text follows the office name, so the canvas is kept and drawn again on a rename. */
+const LOGO_W = 1024;
+const LOGO_H = 256;
+const LOGO_TEXT_X = 150;
+let logoName = DEFAULT_OFFICE_NAME;
+let logoTexture: Texture | null = null;
+
+function drawLogo(ctx: CanvasRenderingContext2D, name: string) {
+  ctx.clearRect(0, 0, LOGO_W, LOGO_H);
+  const s = 36;
+  const ox = 40;
+  const oy = 128 - s - 3;
+  ctx.fillStyle = '#ff5f2e';
+  ctx.beginPath();
+  ctx.roundRect(ox, oy, s, s, 9);
+  ctx.fill();
+  ctx.fillStyle = '#8a94a6';
+  for (const [dx, dy] of [[1, 0], [0, 1], [1, 1]]) {
+    ctx.beginPath();
+    ctx.roundRect(ox + dx * (s + 6), oy + dy * (s + 6), s, s, 9);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#1e2430';
+  ctx.textBaseline = 'middle';
+  // A long name shrinks to fit the board.
+  ctx.font = `700 112px ${UI_FONT}`;
+  const maxW = LOGO_W - LOGO_TEXT_X - 30;
+  const w = ctx.measureText(name).width;
+  const size = w > maxW ? Math.floor((112 * maxW) / w) : 112;
+  ctx.font = `700 ${size}px ${UI_FONT}`;
+  ctx.fillText(name, LOGO_TEXT_X, 132);
+}
+
 export const logoMaterial = () =>
   matOnce('logo', () => {
-    const t = canvas(1024, 256, (ctx) => {
-      ctx.clearRect(0, 0, 1024, 256);
-      const s = 36;
-      const ox = 40;
-      const oy = 128 - s - 3;
-      ctx.fillStyle = '#ff5f2e';
-      ctx.beginPath();
-      ctx.roundRect(ox, oy, s, s, 9);
-      ctx.fill();
-      ctx.fillStyle = '#8a94a6';
-      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1]]) {
-        ctx.beginPath();
-        ctx.roundRect(ox + dx * (s + 6), oy + dy * (s + 6), s, s, 9);
-        ctx.fill();
-      }
-      ctx.fillStyle = '#1e2430';
-      ctx.font = `700 112px ${UI_FONT}`;
-      ctx.textBaseline = 'middle';
-      ctx.fillText('성기 주식회사', 150, 132);
-    });
+    const t = canvas(LOGO_W, LOGO_H, (ctx) => drawLogo(ctx, logoName));
+    logoTexture = t;
     return new MeshStandardMaterial({ map: t, transparent: true, roughness: 0.5 });
   });
+
+/** 사무실 이름이 바뀌면 간판을 다시 그린다. 간판이 아직 만들어지지 않았으면 이름만 기억한다. */
+export function redrawLogo(name: string) {
+  logoName = name;
+  if (!logoTexture) return;
+  drawLogo((logoTexture.image as HTMLCanvasElement).getContext('2d')!, name);
+  logoTexture.needsUpdate = true;
+}
 
 const mats = new Map<string, MeshStandardMaterial>();
 function matOnce(key: string, make: () => MeshStandardMaterial) {
