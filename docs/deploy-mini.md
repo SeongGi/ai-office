@@ -1,10 +1,10 @@
-# 서버기기에 24시간 서버 두기 (ai-office.example.com)
+# 서버 기기에 24시간 서버 두기 (ai-office.example.com)
 
-서버는 서버기기의 Docker(OrbStack)에서 돈다. 사람은 구글 로그인으로 `https://ai-office.example.com`에 들어온다. 기계(훅, seed, close-agent)는 구글 로그인을 못 하므로 같은 도메인의 정해진 세 길로만 접근한다.
+서버는 서버 기기의 Docker(OrbStack)에서 돈다. 사람은 구글 로그인으로 `https://ai-office.example.com`에 들어온다. 기계(훅, seed, close-agent)는 구글 로그인을 못 하므로 같은 도메인의 정해진 세 길로만 접근한다.
 
 ```
-사람   브라우저 -> nginx(/) -> 서버기기:8097 (oauth2-proxy) -> app:4317 (메인 포트, 밖으로 안 나감)
-기계   훅 등 -> nginx(/events, /close-queue, /health) -> 서버기기:4318 (기계용 포트, Bearer 토큰 필수)
+사람   브라우저 -> nginx(/) -> 서버:8097 (oauth2-proxy) -> app:4317 (메인 포트, 밖으로 안 나감)
+기계   훅 등 -> nginx(/events, /close-queue, /health) -> 서버:4318 (기계용 포트, Bearer 토큰 필수)
 ```
 
 ## 1. 구글 콘솔
@@ -15,7 +15,7 @@
 2. 승인된 자바스크립트 원본에 `https://ai-office.example.com`을 더한다.
 3. 클라이언트 ID와 보안 비밀은 직접 복사해서 `.env`에 붙여 넣는다. 보안 비밀은 화면, 채팅, 커밋에 남기지 않는다.
 
-## 2. 서버기기 준비
+## 2. 서버 기기 준비
 
 ```bash
 cd agent-floor-src
@@ -40,7 +40,7 @@ curl http://127.0.0.1:4318/health      # {"ok":true} 만 나와야 한다
 
 ## 3. nginx (NPMplus)
 
-포트 하나만 쓴다. `ai-office.example.com` 전체를 `http://<서버기기 IP>:8097`로 보낸다(웹소켓 지원은 켜도 되고 꺼도 된다).
+포트 하나만 쓴다. `ai-office.example.com` 전체를 `http://<서버 기기 IP>:8097`로 보낸다(웹소켓 지원은 켜도 되고 꺼도 된다).
 
 나누기는 oauth2-proxy가 한다(`docker-compose.yml`의 `OAUTH2_PROXY_UPSTREAMS`, `OAUTH2_PROXY_SKIP_AUTH_ROUTES`).
 
@@ -51,7 +51,7 @@ curl http://127.0.0.1:4318/health      # {"ok":true} 만 나와야 한다
 - 기계용 포트의 `/health`는 `{"ok":true}`만 답한다. 에이전트 수나 버전 같은 내용을 싣지 않는다.
 - 호스트의 4318 포트는 되돌리기와 내부 확인용으로 남아 있다. nginx에는 넣지 않는다.
 
-## 4. 각 기기(노트북, 서버기기)의 환경
+## 4. 각 기기(노트북, 서버 기기)의 환경
 
 `~/.claude/settings.json`의 `env`에 아래 세 값을 넣는다(직접 고쳐 넣는다. 이 문서는 파일을 바꾸지 않는다). 훅, `seed`, `close-agent`가 모두 같은 값을 쓴다.
 
@@ -138,13 +138,13 @@ curl -I http://127.0.0.1:8099/stream    # 404 (실제 서버의 길은 없다)
 ```
 
 - 호스트 포트는 8099다(8098은 다른 앱이 쓴다). 바꾸려면 `.env`에 `AGENT_FLOOR_DEMO_PORT`를 적는다.
-- DNS에 하위 도메인 `office.example.com`을 더하고, NPMplus에서 그 도메인 전체를 `http://<서버기기 IP>:8099`로 보낸다. SSL 인증서도 그 화면에서 발급한다. 로그인이나 웹소켓 설정은 필요 없다.
+- DNS에 하위 도메인 `office.example.com`을 더하고, NPMplus에서 그 도메인 전체를 `http://<서버 기기 IP>:8099`로 보낸다. SSL 인증서도 그 화면에서 발급한다. 로그인이나 웹소켓 설정은 필요 없다.
 - 화면을 고친 뒤에는 `docker compose up -d --build demo`로 데모를 다시 빌드한다.
 - 내리기: `docker compose stop demo` 후 NPMplus에서 그 호스트를 끈다.
 
 ## 6. 참고와 주의
 
-- 서버기기의 다른 앱이 쓰는 oauth2-proxy는 v7.10.0이다. 이 버전은 CVE-2025-54576에 해당한다(`skip_auth_routes`를 쓸 때만 문제가 된다). 이 앱은 `skip_auth_routes`를 쓰지 않고 기계용 포트를 따로 둔 것이 그 때문이다. 참고만 한다.
+- 서버 기기의 다른 앱이 쓰는 oauth2-proxy는 v7.10.0이다. 이 버전은 CVE-2025-54576에 해당한다(`skip_auth_routes`를 쓸 때만 문제가 된다). 이 앱은 `skip_auth_routes`를 쓰지 않고 기계용 포트를 따로 둔 것이 그 때문이다. 참고만 한다.
 - 토큰이 새면 `.env`의 `AGENT_FLOOR_TOKEN`을 바꾸고 `docker compose up -d`, 각 기기의 설정도 바꾼다.
 
 ## 7. 되돌리기
