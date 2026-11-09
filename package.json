@@ -34,6 +34,7 @@
     "build": "tsc --noEmit && vite build",
     "build:pages": "tsc --noEmit && vite build --base=./ --mode pages --outDir dist-pages",
     "start": "node bin/ai-office.mjs start --open",
+    "install-app": "node bin/ai-office.mjs install-app",
     "demo": "node bin/ai-office.mjs demo",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import ./test/support/clean-env.mjs test/*.test.mjs",
