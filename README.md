@@ -49,6 +49,32 @@ For the Google sign-in mode, follow [docs/deploy-mini.md](docs/deploy-mini.md) (
 
 To point the desktop app at a server, pick it on the first-run screen, or run `ai-office app --url https://your-floor.example.com`. The app remembers the choice, so plain `ai-office` opens the same server next time. Change it later from the menu bar icon with **Change server…**. Sign in on the server's own login page inside the window; if `AI_OFFICE_TOKEN` is set, the app sends it as a cookie (never in the URL).
 
+### Installing the desktop app
+
+`ai-office` (described above) runs straight from the cloned repository every time. If you would rather have a real `AI Office.app` in your Dock that you can double-click from Finder or Launchpad, install it once (macOS only, Apple Silicon and Intel):
+
+```bash
+# on a Mac that has Node installed
+git clone https://github.com/SeongGi/ai-office.git
+cd ai-office
+npm ci
+npm run install-app
+```
+
+This copies the Electron binary that `npm ci` already downloaded, renames it to "AI Office", draws its icon, and re-signs it (ad hoc, no Apple Developer account needed) into `~/Applications/AI Office.app`. Unlike running from source, the Dock icon, the Cmd+Tab switcher and the first menu bar item all say "AI Office" instead of "Electron". Re-running `npm run install-app` rebuilds the app in place, so it is safe to use after pulling new code.
+
+Launch it from Finder or Launchpad. On first run it shows the same server-choice screen as `ai-office`; pick local or enter a remote floor's address, and it remembers the choice. To connect an agent's hooks to the floor the app opens, follow [Connect your tools](#connect-your-tools) below, same as for a source install.
+
+To remove it: `node bin/ai-office.mjs install-app --uninstall`. It only ever touches an app it installed itself (checked by bundle identifier); if something else is already at `~/Applications/AI Office.app`, both install and uninstall refuse and tell you to move it out of the way first.
+
+A few things worth knowing before you install:
+
+- **The installed app and a source checkout you are developing on share the same single-instance lock** (both are named "AI Office"). Only one window opens at a time; the other instance just brings that window forward. If you are editing the code and testing it, quit the installed app first, or your changes will not show up because the old window is the one that answers.
+- **The app bundle's own code does not move with it.** `Contents/Resources/app/index.js` points back at the repository path that was installed from. Moving or deleting that repository breaks the installed app; reinstall (`npm run install-app`) after moving it.
+- **If your repository lives under `~/Desktop` (or `~/Documents`) with iCloud Desktop & Documents sync turned on,** iCloud can offload its files to the cloud to save space, which breaks the `require` above even without moving anything. Turn that sync off for the repo's folder, or keep the repository outside `~/Desktop`/`~/Documents`, before installing. `~/Applications` itself is not synced by iCloud, so the installed app's location is safe either way.
+- **The bundled Electron Helper apps keep the name "Electron Helper"** (visible in Activity Monitor and system logs); only the Dock/Cmd+Tab/menu bar identity described above changes.
+- If Gatekeeper still complains after installing (for example, if you copied the `.app` to another Mac), clear the quarantine flag: `xattr -cr ~/Applications/AI\ Office.app`.
+
 ## What you see
 
 | On the floor | Means |
