@@ -367,6 +367,25 @@ async function start(args) {
   }
 }
 
+// ---------------------------------------------------------------- install-app
+async function installAppCmd(args) {
+  const f = flags(args);
+  const { installApp, uninstallApp } = require('../desktop/installer.cjs');
+  const result = f.uninstall ? uninstallApp() : installApp();
+  if (result.ok) {
+    if (f.uninstall) {
+      console.log(result.removed ? 'AI Office.app을 지웠어요.' : '지울 AI Office.app이 없었어요.');
+    } else {
+      console.log(`AI Office.app을 ${result.path}에 설치했어요. Finder나 Launchpad에서 열어 보세요.`);
+      console.log('저장소를 옮기거나 지우면 앱이 깨지니, 이 명령을 다시 실행해 주세요.');
+      console.log('코드를 고치며 테스트할 때는 설치한 앱을 먼저 Quit 하세요(같은 이름을 쓰는 창은 하나만 뜹니다).');
+    }
+  } else {
+    console.error(result.error);
+  }
+  process.exitCode = result.ok ? 0 : 1;
+}
+
 // ---------------------------------------------------------------- seed
 async function seed() {
   const { seedEvents } = await import('../adapters/seed.mjs');
@@ -472,7 +491,7 @@ async function demo(args) {
   }
 }
 
-const commands = { app, start, hook: () => hook(rest[0]), emit, setup, demo, meeting, seed, 'close-agent': closeAgent };
+const commands = { app, start, hook: () => hook(rest[0]), emit, setup, demo, meeting, seed, 'close-agent': closeAgent, 'install-app': installAppCmd };
 if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`ai-office: a live 3D office for your coding agents
 
@@ -484,6 +503,7 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   ai-office meeting start [--all] [주제]  전체 회의 시작 (meeting end 로 끝냄)
   ai-office seed                         이 기기의 열린 Claude 세션을 서버에 올림
   ai-office close-agent                  서버가 맡긴 닫기와 지시 요청을 이 기기에서 실행
+  ai-office install-app [--uninstall]    데스크톱 앱을 ~/Applications에 설치(또는 삭제)
   ai-office demo [--agents 60]          (stress test with many agents)
   ai-office hook <claude|codex|cursor>    (called by agent hooks)
 
