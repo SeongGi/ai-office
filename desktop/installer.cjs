@@ -142,7 +142,6 @@ function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBin
   }
 
   let tmpRoot = null;
-  let movedOut = false;
   try {
     tmpRoot = fsImpl.mkdtempSync(path.join(os.tmpdir(), 'ai-office-install-'));
     const tmpApp = path.join(tmpRoot, `${APP_NAME}.app`);
@@ -157,6 +156,10 @@ function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBin
       pkg = JSON.parse(fsImpl.readFileSync(path.join(repoRoot(), 'package.json'), 'utf8'));
     } catch (err) {
       return { ok: false, error: `저장소의 package.json을 읽지 못했습니다: ${err && err.message ? err.message : err}` };
+    }
+
+    if (typeof pkg.version !== 'string') {
+      return { ok: false, error: '저장소의 package.json에 version 값이 문자열로 없어서 설치를 멈췄습니다.' };
     }
 
     const plistPath = path.join(tmpApp, 'Contents', 'Info.plist');
@@ -209,12 +212,14 @@ function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBin
         throw err;
       }
     }
-    movedOut = true;
     return { ok: true, path: existing };
   } catch (err) {
     return { ok: false, error: err && err.message ? err.message : String(err) };
   } finally {
-    if (tmpRoot && !movedOut) {
+    // tmpApp은 이미 destApp으로 옮겨져 더 이상 tmpRoot 밑에 없을 수 있지만,
+    // 그 형제로 만든 icon.iconset과 tmpRoot 자체는 성공 경로에서도 남으므로
+    // movedOut 여부와 상관없이 tmpRoot 전체를 정리한다(이미 없는 경로는 force로 무해하다).
+    if (tmpRoot) {
       try {
         fsImpl.rmSync(tmpRoot, { recursive: true, force: true });
       } catch {
@@ -226,6 +231,8 @@ function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBin
 
 /** 설치한 `~/Applications/AI Office.app`을 지운다(우리가 만든 앱일 때만). */
 function uninstallApp({ run = spawnSync, fs: fsImpl = fs } = {}) {
+  if (process.platform !== 'darwin') return { ok: false, error: NOT_DARWIN_ERROR };
+
   const existing = destApp();
   const existingInfo = plistIdentifierOf(existing, run, fsImpl);
   if (!existingInfo.present) return { ok: true, removed: false };

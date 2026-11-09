@@ -274,3 +274,68 @@ test('uninstallApp: 우리 앱이 아니면 지우지 않는다', () => {
   assert.equal(result.ok, false);
   assert.ok(fakeFs.existsPaths.has(existing), '우리 앱이 아니면 그대로 남아야 한다');
 });
+
+test('uninstallApp: darwin이 아니면 바로 멈춘다(installApp과 동일한 가드)', () => {
+  const originalPlatform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'linux' });
+  try {
+    const { run } = makeFakeRun();
+    const fakeFs = makeFakeFs({ existingPaths: [destApp()] });
+    const result = uninstallApp({ run, fs: fakeFs });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /macOS에서만/);
+    assert.ok(fakeFs.existsPaths.has(destApp()), '플랫폼 가드에서 멈췄으면 아무 것도 지우지 않아야 한다');
+  } finally {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  }
+});
+
+test('installApp: 성공 후 tmpRoot 전체(icon.iconset 포함)가 더 이상 존재하지 않는다', () => {
+  const { run } = makeFakeRun();
+  const fakeFs = makeFakeFs();
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  assert.equal(result.ok, true);
+  const tmpRootCalls = fakeFs.calls.filter((c) => c[0] === 'mkdtempSync');
+  assert.equal(tmpRootCalls.length, 1);
+  const tmpRoot = tmpRootCalls[0][1];
+  const leftover = [...fakeFs.existsPaths].filter((p) => p === tmpRoot || p.startsWith(`${tmpRoot}/`));
+  assert.deepEqual(leftover, [], `tmpRoot 밑에 아무 것도 남지 않아야 하는데 남았다: ${leftover.join(', ')}`);
+});
+
+test('installApp: package.json의 version이 문자열이 아니면 설치를 멈춘다', () => {
+  const { run } = makeFakeRun();
+  const fakeFs = makeFakeFs();
+  const original = fakeFs.readFileSync.bind(fakeFs);
+  fakeFs.readFileSync = (p) => {
+    if (p.endsWith('package.json') && !p.includes('ai-office-desktop-app')) return JSON.stringify({ version: undefined });
+    return original(p);
+  };
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /version/);
+  assert.equal(
+    fakeFs.calls.some((c) => c[0] === 'writeFileSync' && c[1].endsWith('icon_16x16.png')),
+    false,
+    '아이콘을 만들기 전에 멈춰야 한다',
+  );
+});
+
+test('installApp: 이미 설치된(우리 앱) 상태에서 다시 설치하면 덮어써진다(재설치)', () => {
+  const { run } = makeFakeRun();
+  const fakeFs = makeFakeFs();
+  const first = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  assert.equal(first.ok, true);
+  assert.ok(fakeFs.existsPaths.has(destApp()));
+
+  const second = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  assert.equal(second.ok, true);
+  assert.equal(second.path, destApp());
+  assert.ok(fakeFs.existsPaths.has(destApp()), '두 번째 설치 후에도 destApp이 있어야 한다');
+
+  const tmpRootCalls = fakeFs.calls.filter((c) => c[0] === 'mkdtempSync');
+  assert.equal(tmpRootCalls.length, 2, '재설치도 새 임시 폴더를 쓴다');
+  for (const [, tmpRoot] of tmpRootCalls) {
+    const leftover = [...fakeFs.existsPaths].filter((p) => p === tmpRoot || p.startsWith(`${tmpRoot}/`));
+    assert.deepEqual(leftover, [], `재설치 후에도 tmpRoot가 남아있으면 안 된다: ${leftover.join(', ')}`);
+  }
+});
