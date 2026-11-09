@@ -138,7 +138,7 @@ function makeFakeFs({ existingPaths = [] } = {}) {
 test('installApp: 성공 경로, 새 앱을 만들고 destApp 위치로 옮긴다', () => {
   const { run } = makeFakeRun();
   const fakeFs = makeFakeFs();
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, true);
   assert.equal(result.path, destApp());
   assert.ok(fakeFs.existsPaths.has(destApp()));
@@ -150,7 +150,7 @@ test('installApp: ditto 실패 시 임시 폴더를 지우고 기존 설치는 �
   const existing = destApp();
   const { run } = makeFakeRun({ failOn: ['ditto'] });
   const fakeFs = makeFakeFs({ existingPaths: [existing] });
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, false);
   assert.match(result.error, /ditto/);
   // 기존 앱은 그대로 남아 있어야 한다(식별자가 같아 설치를 진행했지만, ditto 단계에서 실패했다).
@@ -165,7 +165,7 @@ test('installApp: ditto 실패 시 임시 폴더를 지우고 기존 설치는 �
 test('installApp: codesign 실패 시에도 롤백한다', () => {
   const { run } = makeFakeRun({ failOn: ['codesign'] });
   const fakeFs = makeFakeFs();
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, false);
   assert.match(result.error, /codesign/);
   assert.equal(fakeFs.existsPaths.has(destApp()), false);
@@ -182,7 +182,7 @@ test('installApp: codesign 검증 실패 시 --deep으로 다시 서명해 성�
     return run(cmd, args, opts);
   };
   const fakeFs = makeFakeFs();
-  const result = installApp({ run: wrappedRun, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run: wrappedRun, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(verifyCalled, true);
   assert.equal(result.ok, true);
   const codesignCalls = calls.filter((c) => c[0] === 'codesign');
@@ -193,7 +193,7 @@ test('installApp: 기존 설치 식별자가 다르면 설치를 멈추고 아�
   const existing = destApp();
   const { run } = makeFakeRun({ identifier: 'com.someone.else' });
   const fakeFs = makeFakeFs({ existingPaths: [existing] });
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, false);
   assert.match(result.error, /이미 다른 앱이 있어서/);
   assert.ok(fakeFs.existsPaths.has(existing));
@@ -215,7 +215,7 @@ test('installApp: version에 큰따옴표가 있으면 plist 적용 전에 멈�
     if (p.endsWith('package.json') && !p.includes('ai-office-desktop-app')) return JSON.stringify({ version: '1.0.0"beta' });
     return original(p);
   };
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, false);
   assert.match(result.error, /큰따옴표/);
   assert.equal(
@@ -243,7 +243,7 @@ test('installApp: rename이 EXDEV로 실패하면 ditto로 옮긴다', () => {
     if (cmd === 'ditto' && args[1] === destApp()) fakeFs.existsPaths.add(args[1]);
     return result;
   };
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, true);
   assert.ok(fakeFs.existsPaths.has(destApp()));
   const dittoCalls = calls.filter((c) => c[0] === 'ditto');
@@ -253,7 +253,7 @@ test('installApp: rename이 EXDEV로 실패하면 ditto로 옮긴다', () => {
 test('uninstallApp: 설치돼 있지 않으면 성공으로 보되 removed는 false', () => {
   const { run } = makeFakeRun();
   const fakeFs = makeFakeFs();
-  const result = uninstallApp({ run, fs: fakeFs });
+  const result = uninstallApp({ run, fs: fakeFs, platform: 'darwin' });
   assert.deepEqual(result, { ok: true, removed: false });
 });
 
@@ -261,7 +261,7 @@ test('uninstallApp: 우리 앱이면 지운다', () => {
   const existing = destApp();
   const { run } = makeFakeRun();
   const fakeFs = makeFakeFs({ existingPaths: [existing] });
-  const result = uninstallApp({ run, fs: fakeFs });
+  const result = uninstallApp({ run, fs: fakeFs, platform: 'darwin' });
   assert.deepEqual(result, { ok: true, removed: true });
   assert.equal(fakeFs.existsPaths.has(existing), false);
 });
@@ -270,30 +270,37 @@ test('uninstallApp: 우리 앱이 아니면 지우지 않는다', () => {
   const existing = destApp();
   const { run } = makeFakeRun({ identifier: 'com.someone.else' });
   const fakeFs = makeFakeFs({ existingPaths: [existing] });
-  const result = uninstallApp({ run, fs: fakeFs });
+  const result = uninstallApp({ run, fs: fakeFs, platform: 'darwin' });
   assert.equal(result.ok, false);
   assert.ok(fakeFs.existsPaths.has(existing), '우리 앱이 아니면 그대로 남아야 한다');
 });
 
 test('uninstallApp: darwin이 아니면 바로 멈춘다(installApp과 동일한 가드)', () => {
-  const originalPlatform = process.platform;
-  Object.defineProperty(process, 'platform', { value: 'linux' });
-  try {
-    const { run } = makeFakeRun();
-    const fakeFs = makeFakeFs({ existingPaths: [destApp()] });
-    const result = uninstallApp({ run, fs: fakeFs });
-    assert.equal(result.ok, false);
-    assert.match(result.error, /macOS에서만/);
-    assert.ok(fakeFs.existsPaths.has(destApp()), '플랫폼 가드에서 멈췄으면 아무 것도 지우지 않아야 한다');
-  } finally {
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
-  }
+  const { run } = makeFakeRun();
+  const fakeFs = makeFakeFs({ existingPaths: [destApp()] });
+  const result = uninstallApp({ run, fs: fakeFs, platform: 'linux' });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /macOS에서만/);
+  assert.ok(fakeFs.existsPaths.has(destApp()), '플랫폼 가드에서 멈췄으면 아무 것도 지우지 않아야 한다');
+});
+
+test('installApp: darwin이 아니면 바로 멈춘다', () => {
+  const { run } = makeFakeRun();
+  const fakeFs = makeFakeFs();
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'win32' });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /macOS에서만/);
+  assert.equal(
+    fakeFs.calls.some((c) => c[0] === 'mkdtempSync'),
+    false,
+    '플랫폼 가드에서 멈췄으면 설치 작업을 시작하지도 않아야 한다',
+  );
 });
 
 test('installApp: 성공 후 tmpRoot 전체(icon.iconset 포함)가 더 이상 존재하지 않는다', () => {
   const { run } = makeFakeRun();
   const fakeFs = makeFakeFs();
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, true);
   const tmpRootCalls = fakeFs.calls.filter((c) => c[0] === 'mkdtempSync');
   assert.equal(tmpRootCalls.length, 1);
@@ -310,7 +317,7 @@ test('installApp: package.json의 version이 문자열이 아니면 설치를 �
     if (p.endsWith('package.json') && !p.includes('ai-office-desktop-app')) return JSON.stringify({ version: undefined });
     return original(p);
   };
-  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const result = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(result.ok, false);
   assert.match(result.error, /version/);
   assert.equal(
@@ -323,11 +330,11 @@ test('installApp: package.json의 version이 문자열이 아니면 설치를 �
 test('installApp: 이미 설치된(우리 앱) 상태에서 다시 설치하면 덮어써진다(재설치)', () => {
   const { run } = makeFakeRun();
   const fakeFs = makeFakeFs();
-  const first = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const first = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(first.ok, true);
   assert.ok(fakeFs.existsPaths.has(destApp()));
 
-  const second = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN });
+  const second = installApp({ run, fs: fakeFs, electronBin: FAKE_ELECTRON_BIN, platform: 'darwin' });
   assert.equal(second.ok, true);
   assert.equal(second.path, destApp());
   assert.ok(fakeFs.existsPaths.has(destApp()), '두 번째 설치 후에도 destApp이 있어야 한다');

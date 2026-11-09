@@ -114,9 +114,10 @@ function plistIdentifierOf(appPath, run, fsImpl) {
  *
  * `electronBin`은 테스트 전용 주입 지점이다(실제 호출은 항상 `require('electron')`을 쓴다).
  * `run`/`fs`는 외부 명령 실행과 파일시스템 호출을 주입받는다(기본값은 진짜 spawnSync/node:fs).
+ * `platform`도 테스트 전용 주입 지점이다(기본값은 실제 `process.platform`).
  */
-function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBinOverride } = {}) {
-  if (process.platform !== 'darwin') return { ok: false, error: NOT_DARWIN_ERROR };
+function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBinOverride, platform = process.platform } = {}) {
+  if (platform !== 'darwin') return { ok: false, error: NOT_DARWIN_ERROR };
 
   let electronBin = electronBinOverride;
   if (electronBin === undefined) {
@@ -229,9 +230,13 @@ function installApp({ run = spawnSync, fs: fsImpl = fs, electronBin: electronBin
   }
 }
 
-/** 설치한 `~/Applications/AI Office.app`을 지운다(우리가 만든 앱일 때만). */
-function uninstallApp({ run = spawnSync, fs: fsImpl = fs } = {}) {
-  if (process.platform !== 'darwin') return { ok: false, error: NOT_DARWIN_ERROR };
+/**
+ * 설치한 `~/Applications/AI Office.app`을 지운다(우리가 만든 앱일 때만).
+ *
+ * `platform`은 테스트 전용 주입 지점이다(기본값은 실제 `process.platform`).
+ */
+function uninstallApp({ run = spawnSync, fs: fsImpl = fs, platform = process.platform } = {}) {
+  if (platform !== 'darwin') return { ok: false, error: NOT_DARWIN_ERROR };
 
   const existing = destApp();
   const existingInfo = plistIdentifierOf(existing, run, fsImpl);
