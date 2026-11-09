@@ -195,30 +195,12 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     if (process.platform === 'darwin') app.dock?.setIcon(nativeImage.createFromBuffer(markPng(512, { background: true })));
-    // 서버 바꾸기는 상태 막대 아이콘 메뉴에만 있으면 찾기 어려우므로 앱 메뉴에도 둔다.
-    const changeServer = { label: 'Change server…', click: () => createWindow(true) };
+    // 서버 바꾸기는 상태 막대 아이콘 메뉴에만 있으면 찾기 어려우므로 위쪽 메뉴에도 둔다.
+    // macOS의 첫 메뉴 제목은 실행 파일 묶음 이름(소스 설치에서는 Electron)을 따르므로, 제목을 정할 수 있는 Server 메뉴를 따로 만든다.
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
-        ...(process.platform === 'darwin'
-          ? [
-              {
-                label: app.name,
-                submenu: [
-                  { role: 'about' },
-                  { type: 'separator' },
-                  changeServer,
-                  { type: 'separator' },
-                  { role: 'services' },
-                  { type: 'separator' },
-                  { role: 'hide' },
-                  { role: 'hideOthers' },
-                  { role: 'unhide' },
-                  { type: 'separator' },
-                  { role: 'quit' },
-                ],
-              },
-            ]
-          : [{ label: 'File', submenu: [changeServer, { type: 'separator' }, { role: 'quit' }] }]),
+        ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+        { label: 'Server', submenu: [{ label: 'Change server…', click: () => createWindow(true) }] },
         { role: 'editMenu' },
         { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
         { role: 'windowMenu' },
